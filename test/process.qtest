@@ -1,0 +1,309 @@
+#!/usr/bin/env qore
+
+%new-style
+
+%requires process
+%requires QUnit
+
+%exec-class Main
+
+# to be used in static methods and separate functions
+our *softbool VERBOSE;
+our object MAIN; # sort of hack...
+
+
+public class Main inherits QUnit::Test {
+
+    constructor() : Test("Process", "1.0") {
+        VERBOSE = m_options.verbose;
+        MAIN = self;
+
+        addTestCase("searchPath test", \searchPathTest());
+        addTestCase("Simple test", \simpleTest());
+        addTestCase("Single test negative", \simpleTestNegative());
+        addTestCase("IO test", \ioTest());
+        addTestCase("Executor events test: closure", \executorsTest());
+        addTestCase("Executor events test: refs", \executorsRefsTest());
+        addTestCase("Executor negative test", \executorsNegativeTest());
+        addTestCase("Thread test", \threadTest());
+        addTestCase("Env vars test", \envVarsTest());
+        addTestCase("Env var negative test", \envVarsNegativeTest());
+
+        # Return for compatibility with test harness that checks return value.
+        set_return_value(main());
+    }
+
+    globalSetUp() {
+    }
+
+    globalTearDown() {
+    }
+
+    searchPathTest() {
+        any s = Process::searchPath("ls");
+        assertEq("/usr/bin/ls", s, "searchPath for ls");
+
+        try {
+            Process::searchPath("some-not-existing-exec");
+            assertEq(0, 1, "some-not-existing-exec for searchPath");
+        }
+        catch (hash ex) {
+            assertEq("PROCESS-SEARCH-PATH-ERROR", ex.err, "some-not-existing-exec for searchPath");
+        }
+    }
+
+    simpleTest() {
+        Process p("ls", ("-l", "-s", )); # let's hope it's available in all OSes
+        assertEq(True, p.id() > 0, "PID must be given");
+        assertEq(True, p.valid(), "process must be valid");
+
+        p.wait();
+        int ret = p.exitCode();
+        assertEq(0, ret, "expected 0 retval");
+    }
+
+    simpleTestNegative() {
+        try {
+            Process p("some-not-existing-exec");
+            p.wait();
+            int ret = p.exitCode();
+            assertEq(0, 1, "some-not-existing-exec for Process");
+        }
+        catch (hash ex) {
+            assertEq("PROCESS-SEARCH-PATH-ERROR", ex.err, "some-not-existing-exec for Process");
+        }
+    }
+
+    executorsTest() {
+        hash opts = (
+                "on_success" : sub (hash e) {
+                    if (m_options.verbose) printf("    on_success attribute: %n\n", e);
+                    assertEq("on_success", e.name, "name check");
+                    assertEq(127, e.exit, "on_success exit code check");
+                    assertEq("/usr/bin/true", e.exe, "on_success exe check");
+                    assertEq(0, e.error_code, "on_success error_code check");
+                    assertEq("Success", e.error_message, "on_success error_message check");
+                    assertEq("system", e.error_category, "on_success error_category check");
+                },
+                "on_setup" : sub (hash e) {
+                    if (m_options.verbose) printf("    on_setup attribute: %n\n", e);
+                    assertEq("on_setup", e.name, "name check");
+                },
+                "on_error" : sub (hash e) {
+                    if (m_options.verbose) printf("    on_error attribute: %n\n", e);
+                    assertEq("on_error", e.name, "name check");
+                },
+                "on_fork_error" : sub (hash e) {
+                    if (m_options.verbose) printf("    on_fork_error attribute: %n\n", e);
+                    assertEq("on_fork_error", e.name, "name check");
+                },
+                "on_exec_setup" : sub (hash e) {
+                    if (m_options.verbose) printf("    on_exec_setup attribute: %n\n", e);
+                    assertEq("on_exec_setup", e.name, "name check");
+                },
+                "on_exec_error" : sub (hash e) {
+                    if (m_options.verbose) printf("    on_exec_error attribute: %n\n", e);
+                    assertEq("on_exec_error", e.name, "name check");
+                },
+            );
+
+        Process p("true", NOTHING, opts);
+        p.wait();
+        int ret = p.exitCode();
+        assertEq(0, ret, "expected 0 retval");
+    }
+
+    executorMethod(hash e) {
+        if (m_options.verbose) printf("executorMethod: %n\n", e);
+        assertEq("on_success", e.name, "name check");
+        assertEq(127, e.exit, "on_success exit code check");
+        assertEq("/usr/bin/true", e.exe, "on_success exe check");
+        assertEq(0, e.error_code, "on_success error_code check");
+        assertEq("Success", e.error_message, "on_success error_message check");
+        assertEq("system", e.error_category, "on_success error_category check");
+    }
+
+    static executorStaticMethod(hash e) {
+        if (VERBOSE) printf("executorStaticMethod: %n\n", e);
+        MAIN.assertEq("on_success", e.name, "name check");
+        MAIN.assertEq(127, e.exit, "on_success exit code check");
+        MAIN.assertEq("/usr/bin/true", e.exe, "on_success exe check");
+        MAIN.assertEq(0, e.error_code, "on_success error_code check");
+        MAIN.assertEq("Success", e.error_message, "on_success error_message check");
+        MAIN.assertEq("system", e.error_category, "on_success error_category check");
+    }
+
+    executorNoHash() {
+        hash e = argv[0];
+        if (m_options.verbose) printf("executorNoHash: %n\n", e);
+        assertEq("on_success", e.name, "name check");
+        assertEq(127, e.exit, "on_success exit code check");
+        assertEq("/usr/bin/true", e.exe, "on_success exe check");
+        assertEq(0, e.error_code, "on_success error_code check");
+        assertEq("Success", e.error_message, "on_success error_message check");
+        assertEq("system", e.error_category, "on_success error_category check");
+    }
+
+    executorsRefsTest() {
+        list opts = (
+            ( "on_success" : \executor_func() ), # function ref
+            ( "on_success" : \self.executorMethod() ), # method ref
+            ( "on_success" : \Main::executorStaticMethod() ), # static method ref
+            ( "on_success" : \self.executorNoHash() ), # no arguments
+        );
+
+        ListIterator it(opts);
+        while (it.next()) {
+            Process p("true", NOTHING, it.getValue());
+            p.wait();
+            int ret = p.exitCode();
+            assertEq(0, ret, "expected 0 retval");
+        }
+    }
+
+    executorsNegativeTest() {
+        try {
+            hash opts = (
+                    "on_success" : 1,
+                );
+            Process p("true", NOTHING, opts);
+        }
+        catch (hash ex) {
+            assertEq("PROCESS-OPTIONS-ERROR", ex.err, "on_success using integer: err");
+            assertEq("executor 'on_success' required code as value, got: 'integer'(1)",
+                     ex.desc,
+                     "on_success using integer: desc"
+                    );
+        }
+
+        try {
+            hash opts = (
+                    "on_success" : sub (int i) {},
+                );
+            Process p("true", NOTHING, opts);
+        }
+        catch (hash ex) {
+            assertEq("RUNTIME-TYPE-ERROR", ex.err, "on_success using code with no hash as arg: err");
+            assertEq("parameter 1 ('i') expects type 'int', but got type 'hash' instead",
+                     ex.desc,
+                     "on_success using code with no hash as arg: desc"
+                    );
+        }
+    }
+
+    ioTest() {
+        string str = "text to write";
+        bool have_stdout = False;
+        bool have_stderr = False;
+
+        hash opts = (
+                "path" : ".:"+ENV.PATH,
+            );
+        Process p("test_io.q", NOTHING, opts);
+        p.write(str);
+
+        int ix = 0;
+        while (*string e = p.readStdout()) {
+            have_stdout = True;
+            string msg = sprintf("my error %d", ix);
+            assertEq(str, e, "stdout text "+ix);
+            ix++;
+        }
+
+        ix = 0;
+        while (*string e = p.readStderr()) {
+            have_stderr = True;
+            string msg = sprintf("my error %d", ix);
+            assertEq(msg, e, "stderr text "+ix);
+            ix++;
+        }
+
+        p.wait();
+        int ret = p.exitCode();
+
+        assertEq(0, ret, "expected 0 retval");
+        assertEq(True, have_stderr, "at least some stderr must be done");
+        assertEq(True, have_stdout, "at least some stdout must be done");
+    }
+
+    threadTest() {
+        Process p("tee", "-");
+        assertEq(True, p.id() > 0, "PID must be given");
+        assertEq(True, p.valid(), "process must be valid");
+        assertEq(True, p.running(), "process must be running");
+
+        background run_bg(p, self);
+        #p.write("foobar");
+        sleep(1s);
+        p.terminate();
+    }
+
+    envVarsTest() {
+        hash opts_p = (
+                "path" : ".",
+            );
+        list cases = (
+                ( "args" : ( "FOO", "bar"),
+                  "opts" : ( "env" : ( "FOO" : "bar" ), ) + opts_p,
+                  "ret" : 0 ),
+                ( "args" : ( "PATH", "."),
+                  "opts" : ( "env" : ( "PATH" : "foo" ), ) + opts_p,
+                  "ret" : 127 ), # TODO/FIXME: really 127? echo $? returns 3...
+            );
+
+        ListIterator it(cases);
+        while (it.next()) {
+            hash a = it.getValue();
+            Process p("test_env.q", a.args, a.opts);
+            p.wait();
+            int ret = p.exitCode();
+
+
+            assertEq(a.ret, ret, sprintf("env var retval for %n", a));
+        }
+    }
+
+    envVarsNegativeTest() {
+        hash opts = (
+                "env" : 1, # let's try something else than hash for envs
+            );
+
+        try {
+            Process p("true", NOTHING, opts);
+            p.wait();
+            assertEq(True, False, "envVarsNegativeTest cannot go here");
+        }
+        catch (hash ex) {
+            assertEq("PROCESS-OPTIONS-ERROR", ex.err, "envVarsNegativeTest negative: err");
+            assertEq("Environment variables option must be a hash, got: 'integer'(1)",
+                     ex.desc,
+                     "envVarsNegativeTest negative: desc"
+                    );
+        }
+    }
+
+}
+
+sub run_bg(Process p, Main m) {
+    m.assertEq(True, p.id() > 0, "PID must be given");
+    m.assertEq(True, p.valid(), "process must be valid");
+    m.assertEq(True, p.running(), "process must be running");
+
+    try {
+        p.wait();
+    }
+    catch (hash ex) {
+        m.assertEq("PROCESS-WAIT-ERROR", ex.err, "process is killed from main thread - err");
+        m.assertEq("waitpid(2) failed: No child processes", ex.desc, "process is killed from main thread - desc");
+    }
+}
+
+sub executor_func(hash e) {
+    if (VERBOSE) printf("executor_func: %n\n", e);
+    MAIN.assertEq("on_success", e.name, "name check");
+    MAIN.assertEq(127, e.exit, "on_success exit code check");
+    MAIN.assertEq("/usr/bin/true", e.exe, "on_success exe check");
+    MAIN.assertEq(0, e.error_code, "on_success error_code check");
+    MAIN.assertEq("Success", e.error_message, "on_success error_message check");
+    MAIN.assertEq("system", e.error_category, "on_success error_category check");
+}

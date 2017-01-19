@@ -1,0 +1,45 @@
+
+#include <qore/Qore.h>
+
+
+
+/** @mainpage %Qore %Process Module
+
+*/
+
+static QoreNamespace ProcessNS("Process");
+
+
+void init_constants_constants(QoreNamespace& ns);
+QoreClass* initProcessClass(QoreNamespace& ns);
+
+
+QoreStringNode * process_module_init() {
+    init_constants_constants(ProcessNS);
+    ProcessNS.addSystemClass(initProcessClass(ProcessNS));
+
+    return 0;
+}
+
+void process_module_ns_init(QoreNamespace *rns, QoreNamespace *qns) {
+    qns->addNamespace(ProcessNS.copy());
+}
+
+void process_module_delete() {
+   // nothing to do here in this case
+}
+
+
+// qore module symbols
+DLLEXPORT char qore_module_name[] = "process";
+DLLEXPORT char qore_module_version[] = PACKAGE_VERSION;
+DLLEXPORT char qore_module_description[] = "Process module";
+DLLEXPORT char qore_module_author[] = "Petr Vanek";
+DLLEXPORT char qore_module_url[] = "http://qore.org";
+DLLEXPORT int qore_module_api_major = QORE_MODULE_API_MAJOR;
+DLLEXPORT int qore_module_api_minor = QORE_MODULE_API_MINOR;
+DLLEXPORT qore_module_init_t qore_module_init = process_module_init;
+DLLEXPORT qore_module_ns_init_t qore_module_ns_init = process_module_ns_init;
+DLLEXPORT qore_module_delete_t qore_module_delete = process_module_delete;
+DLLEXPORT qore_license_t qore_module_license = QL_LGPL;
+

@@ -1,0 +1,139 @@
+/* -*- mode: c++; indent-tabs-mode: nil -*- */
+
+#include "processpriv.h"
+
+//! Implementation of Process class
+/**
+ */
+qclass Process [dom=PROCESS; arg=ProcessPriv* priv; ns=Qore::Process];
+
+
+//! todo/fixme
+/**
+TODO/FIXME: the *liost is used instead of *softlist to avoid conversion of opts hash to arls list
+ */
+Process::constructor(string command, *softlist arguments, *hash opts) {
+    self->setPrivate(CID_PROCESS, new ProcessPriv(command->getBuffer(), arguments, opts, xsink));
+}
+
+//! Copy method - instance of this class cannot be copied.
+/**
+    @throw PROCESS-COPY-ERROR	- Copying of Process objects is not supported
+ */
+Process::copy() {
+   xsink->raiseException("PROCESS-COPY-ERROR", "copying Proces objects is currently not supported");
+}
+
+//! todo/fixme
+/**
+ */
+Process::destructor() {
+    //printd(5, "Process::destructor() priv: %p\n", priv);
+    //todo/fixme: check for running process
+}
+
+//! todo/fixme
+/**
+ */
+int Process::exitCode() {
+    return priv->exitCode(xsink);
+}
+
+//! todo/fixme
+/**
+ */
+int Process::id() {
+    return priv->id(xsink);
+}
+
+//! todo/fixme
+/**
+ */
+bool Process::valid() {
+    return priv->valid(xsink);
+}
+
+//! todo/fixme
+/**
+ */
+bool Process::running() {
+    return priv->running(xsink);
+}
+
+//! todo/fixme
+/**
+ */
+bool Process::wait() {
+    return priv->wait(xsink);
+}
+
+//! todo/fixme
+/**
+ */
+bool Process::wait(timeout t) {
+    return priv->wait(t, xsink);
+}
+
+//! todo/fixme
+/**
+ */
+nothing Process::terminate() {
+    priv->terminate(xsink);
+}
+
+//! todo/fixme
+/**
+ */
+nothing Process::write(string s) {
+    priv->write(s->getBuffer(), xsink);
+}
+
+//! todo/fixme
+/**
+ */
+nothing Process::write(binary b) {
+    priv->write(b->getPtr(), xsink);
+}
+
+//! todo/fixme
+/**
+ */
+nothing Process::write(int i) {
+    priv->write(i, xsink);
+}
+
+//! todo/fixme
+/**
+ */
+nothing Process::write(float f) {
+    priv->write(f, xsink);
+}
+
+//! todo/fixme
+/**
+ */
+nothing Process::write(number n) {
+    QoreStringNodeValueHelper s(n);
+    priv->write(s->getBuffer(), xsink);
+}
+
+//! todo/fixme
+/**
+ */
+string Process::readStdout() {
+    return priv->readStdout();
+}
+
+//! todo/fixme
+/**
+ */
+string Process::readStderr() {
+    return priv->readStderr();
+}
+
+//! todo/fixme
+/**
+ */
+static *string Process::searchPath(string command) {
+    return new QoreStringNode(ProcessPriv::searchPath(command->getBuffer(), xsink));
+}

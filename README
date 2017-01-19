@@ -1,0 +1,19 @@
+
+* BUILD INSTRUCTIONS *
+
+Requirements:
+ - Qore development environment (lib and headers)
+ - Cmake
+ - (optional) DOxygen
+
+Use so called "out of source" build
+
+ - mkdir build   (in module directory)
+ - cd build
+ - cmake -DCMAKE_INSTALL_PREFIX=/path/to/install ..   (if there is not -DCMAKE_INSTALL_PREFIX specified, the Qore module dire is used)
+ - make
+ - cross fingers
+ - make install
+
+Some tests are located in "test" directory.
+
