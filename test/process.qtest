@@ -19,6 +19,7 @@ public class Main inherits QUnit::Test {
         MAIN = self;
 
         addTestCase("searchPath test", \searchPathTest());
+        addTestCase("Constructor test", \constructorTest());
         addTestCase("Simple test", \simpleTest());
         addTestCase("Single test negative", \simpleTestNegative());
         addTestCase("IO test", \ioTest());
@@ -50,6 +51,28 @@ public class Main inherits QUnit::Test {
         catch (hash ex) {
             assertEq("PROCESS-SEARCH-PATH-ERROR", ex.err, "some-not-existing-exec for searchPath");
         }
+    }
+
+    constructorTest() {
+        hash opts = (
+                "env" : ( "FOO" : "bar" ),
+            );
+
+        Process p1("true");
+        p1.wait();
+        assertEq(0, p1.exitCode(), "exit code p1");
+
+        Process p2("true", 1);
+        p2.wait();
+        assertEq(0, p2.exitCode(), "exit code p2");
+
+        Process p3("true", opts);
+        p3.wait();
+        assertEq(0, p3.exitCode(), "exit code p3");
+
+        Process p4("true", 1, opts);
+        p4.wait();
+        assertEq(0, p4.exitCode(), "exit code p4");
     }
 
     simpleTest() {
@@ -107,7 +130,7 @@ public class Main inherits QUnit::Test {
                 },
             );
 
-        Process p("true", NOTHING, opts);
+        Process p("true", opts);
         p.wait();
         int ret = p.exitCode();
         assertEq(0, ret, "expected 0 retval");
@@ -154,7 +177,7 @@ public class Main inherits QUnit::Test {
 
         ListIterator it(opts);
         while (it.next()) {
-            Process p("true", NOTHING, it.getValue());
+            Process p("true", it.getValue());
             p.wait();
             int ret = p.exitCode();
             assertEq(0, ret, "expected 0 retval");
@@ -166,7 +189,7 @@ public class Main inherits QUnit::Test {
             hash opts = (
                     "on_success" : 1,
                 );
-            Process p("true", NOTHING, opts);
+            Process p("true", opts);
         }
         catch (hash ex) {
             assertEq("PROCESS-OPTIONS-ERROR", ex.err, "on_success using integer: err");
@@ -180,7 +203,7 @@ public class Main inherits QUnit::Test {
             hash opts = (
                     "on_success" : sub (int i) {},
                 );
-            Process p("true", NOTHING, opts);
+            Process p("true", opts);
         }
         catch (hash ex) {
             assertEq("RUNTIME-TYPE-ERROR", ex.err, "on_success using code with no hash as arg: err");
@@ -199,7 +222,7 @@ public class Main inherits QUnit::Test {
         hash opts = (
                 "path" : ".:"+ENV.PATH,
             );
-        Process p("test_io.q", NOTHING, opts);
+        Process p("test_io.q", opts);
         p.write(str);
 
         int ix = 0;
@@ -269,7 +292,7 @@ public class Main inherits QUnit::Test {
             );
 
         try {
-            Process p("true", NOTHING, opts);
+            Process p("true", opts);
             p.wait();
             assertEq(True, False, "envVarsNegativeTest cannot go here");
         }
