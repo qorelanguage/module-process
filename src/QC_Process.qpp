@@ -10,7 +10,6 @@ qclass Process [dom=PROCESS; arg=ProcessPriv* priv; ns=Qore::Process];
 
 //! todo/fixme
 /**
-TODO/FIXME: the *liost is used instead of *softlist to avoid conversion of opts hash to arls list
  */
 Process::constructor(string command) {
     self->setPrivate(CID_PROCESS, new ProcessPriv(command->getBuffer(), 0, 0, xsink));
@@ -18,7 +17,6 @@ Process::constructor(string command) {
 
 //! todo/fixme
 /**
-TODO/FIXME: the *liost is used instead of *softlist to avoid conversion of opts hash to arls list
  */
 Process::constructor(string command, hash opts) {
     self->setPrivate(CID_PROCESS, new ProcessPriv(command->getBuffer(), 0, opts, xsink));
@@ -26,7 +24,6 @@ Process::constructor(string command, hash opts) {
 
 //! todo/fixme
 /**
-TODO/FIXME: the *liost is used instead of *softlist to avoid conversion of opts hash to arls list
  */
 Process::constructor(string command, softlist arguments) {
     self->setPrivate(CID_PROCESS, new ProcessPriv(command->getBuffer(), arguments, 0, xsink));
@@ -34,7 +31,6 @@ Process::constructor(string command, softlist arguments) {
 
 //! todo/fixme
 /**
-TODO/FIXME: the *liost is used instead of *softlist to avoid conversion of opts hash to arls list
  */
 Process::constructor(string command, softlist arguments, hash opts) {
     self->setPrivate(CID_PROCESS, new ProcessPriv(command->getBuffer(), arguments, opts, xsink));
