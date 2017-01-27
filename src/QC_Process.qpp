@@ -156,5 +156,12 @@ string Process::readStderr() {
 /**
  */
 static *string Process::searchPath(string command) {
-    return new QoreStringNode(ProcessPriv::searchPath(command->getBuffer(), xsink));
+    return new QoreStringNode(ProcessPriv::optsPath(command->getBuffer(), 0, xsink).string());
+}
+
+//! todo/fixme
+/**
+ */
+static *string Process::searchPath(string command, hash opts) {
+    return new QoreStringNode(ProcessPriv::optsPath(command->getBuffer(), opts, xsink).string());
 }

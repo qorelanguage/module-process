@@ -66,9 +66,9 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
 }
 
 ProcessPriv::~ProcessPriv() {
-    if (m_process)
-        delete m_process;
-    m_process = 0;
+//    if (m_process)
+//        delete m_process;
+//    m_process = 0;
 }
 
 const ResolvedCallReferenceNode* ProcessPriv::optsExecutor(const char * name, const QoreHashNode *opts, ExceptionSink *xsink)
@@ -157,17 +157,6 @@ boost::filesystem::path ProcessPriv::optsPath(const char* command, const QoreHas
         xsink->raiseException("PROCESS-SEARCH-PATH-ERROR", "Command '%s' cannot be found in PATH", command);
     }
     return ret;
-}
-
-std::string ProcessPriv::searchPath(const char* command, ExceptionSink *xsink)
-{
-    boost::filesystem::path p = bp::search_path(command);
-
-    if (p.empty()) {
-        xsink->raiseException("PROCESS-SEARCH-PATH-ERROR", "Command '%s' cannot be found in PATH", command); // TODO/FIXME: search in paths
-    }
-
-    return p.string();
 }
 
 int ProcessPriv::exitCode(ExceptionSink *xsink) {

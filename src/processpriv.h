@@ -46,7 +46,7 @@ public:
 
     DLLLOCAL QoreStringNode* readStdout();
 
-    DLLLOCAL static std::string searchPath(const char* command, ExceptionSink *xsink);
+    static boost::filesystem::path optsPath(const char* command, const QoreHashNode *opts, ExceptionSink *xsink);
 
 private:
     bp::child *m_process;
@@ -57,8 +57,6 @@ private:
     const ResolvedCallReferenceNode* optsExecutor(const char * name, const QoreHashNode *opts, ExceptionSink *xsink);
 
     bp::environment optsEnv(const QoreHashNode *opts, ExceptionSink *xsink);
-
-    boost::filesystem::path optsPath(const char* command, const QoreHashNode *opts, ExceptionSink *xsink);
 };
 
 #endif
