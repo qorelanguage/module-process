@@ -24,6 +24,8 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
     bp::environment e = optsEnv(opts, xsink);
     boost::filesystem::path p = optsPath(command, opts, xsink);
 
+    const char* wdir = optsWDir(opts, xsink);
+
     if (xsink->isException()) {
         return;
     }
@@ -44,8 +46,8 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
     try {
         m_process = new bp::child(bp::exe = p.string(),
                                   bp::args = a,
-                                  bp::env = e, // TODO/FIXME: later from options
-                                  bp::start_dir = ".", // TODO/FIXME: later from options
+                                  bp::env = e,
+                                  bp::start_dir = wdir,
                                   // TODO/FIXME: bp::shell flag on demand from options
                                   QoreProcessHandler(xsink,
                                                      on_success,
@@ -66,9 +68,9 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
 }
 
 ProcessPriv::~ProcessPriv() {
-//    if (m_process)
-//        delete m_process;
-//    m_process = 0;
+    if (m_process)
+        delete m_process;
+    m_process = 0;
 }
 
 const ResolvedCallReferenceNode* ProcessPriv::optsExecutor(const char * name, const QoreHashNode *opts, ExceptionSink *xsink)
@@ -122,6 +124,28 @@ bp::environment ProcessPriv::optsEnv(const QoreHashNode *opts, ExceptionSink *xs
     }
 
     return ret;
+}
+
+const char* ProcessPriv::optsWDir(const QoreHashNode *opts, ExceptionSink *xsink)
+{
+    const char * ret = ".";
+
+    if (opts && opts->existsKey("wdir")) {
+        const AbstractQoreNode *n = opts->getKeyValue("wdir");
+        if (n->getType() != NT_STRING)
+        {
+            xsink->raiseException("PROCESS-OPTIONS-ERROR",
+                                  "Working dir 'wdir' option must be a string, got: '%s'(%d)",
+                                  n->getTypeName(),
+                                  n->getType()
+                                 );
+            return ret;
+        }
+        QoreStringValueHelper s(n);
+        ret = s->getBuffer();
+    }
+
+    return boost::filesystem::absolute(ret).string().data();
 }
 
 boost::filesystem::path ProcessPriv::optsPath(const char* command, const QoreHashNode *opts, ExceptionSink *xsink)

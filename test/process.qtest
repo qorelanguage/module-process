@@ -29,6 +29,7 @@ public class Main inherits QUnit::Test {
         addTestCase("Thread test", \threadTest());
         addTestCase("Env vars test", \envVarsTest());
         addTestCase("Env var negative test", \envVarsNegativeTest());
+        addTestCase("working dir test", \wdirTest());
 
         # Return for compatibility with test harness that checks return value.
         set_return_value(main());
@@ -305,6 +306,18 @@ public class Main inherits QUnit::Test {
         }
     }
 
+    wdirTest() {
+        hash opts = (
+                "wdir" : "/tmp",
+                "path" : ".:"+ENV.PATH,
+            );
+        Process p("test_wdir.q", opts);
+        while (*string e = p.readStdout()) {
+            assertEq(opts.wdir, e, "wdir value read from stdout");
+        }
+        p.wait();
+        assertEq(0, p.exitCode(), "process exit code");
+    }
 }
 
 sub run_bg(Process p, Main m) {
