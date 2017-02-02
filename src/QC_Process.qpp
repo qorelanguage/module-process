@@ -48,14 +48,6 @@ Process::copy() {
 //! todo/fixme
 /**
  */
-Process::destructor() {
-    //printd(5, "Process::destructor() priv: %p\n", priv);
-    //todo/fixme: check for running process
-}
-
-//! todo/fixme
-/**
- */
 int Process::exitCode() {
     return priv->exitCode(xsink);
 }
