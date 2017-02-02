@@ -152,7 +152,6 @@ set(CPP_SRC
 set(QPP_SRC
     src/process.qpp
     src/QC_Process.qpp
-    src/constants.qpp
 )
 
 qore_wrap_qpp_value(QPP_SOURCES ${QPP_SRC})

@@ -10,12 +10,10 @@
 static QoreNamespace ProcessNS("Process");
 
 
-void init_constants_constants(QoreNamespace& ns);
 QoreClass* initProcessClass(QoreNamespace& ns);
 
 
 QoreStringNode * process_module_init() {
-    init_constants_constants(ProcessNS);
     ProcessNS.addSystemClass(initProcessClass(ProcessNS));
 
     return 0;
