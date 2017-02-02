@@ -221,7 +221,7 @@ public class Main inherits QUnit::Test {
         bool have_stderr = False;
 
         hash opts = (
-                "path" : ".:"+ENV.PATH,
+                "path" : absolute_path(".")+":"+ENV.PATH,
             );
         Process p("test_io.q", opts);
         p.write(str);
@@ -264,13 +264,13 @@ public class Main inherits QUnit::Test {
 
     envVarsTest() {
         hash opts_p = (
-                "path" : ".",
+                "path" : absolute_path("."),
             );
         list cases = (
                 ( "args" : ( "FOO", "bar"),
                   "opts" : ( "env" : ( "FOO" : "bar" ), ) + opts_p,
                   "ret" : 0 ),
-                ( "args" : ( "PATH", "."),
+                ( "args" : ( "PATH", get_script_dir()),
                   "opts" : ( "env" : ( "PATH" : "foo" ), ) + opts_p,
                   "ret" : 127 ), # TODO/FIXME: really 127? echo $? returns 3...
             );
@@ -309,7 +309,7 @@ public class Main inherits QUnit::Test {
     wdirTest() {
         hash opts = (
                 "wdir" : "/tmp",
-                "path" : ".:"+ENV.PATH,
+                "path" : absolute_path("."),
             );
         Process p("test_wdir.q", opts);
         while (*string e = p.readStdout()) {
@@ -318,6 +318,12 @@ public class Main inherits QUnit::Test {
         p.wait();
         assertEq(0, p.exitCode(), "process exit code");
     }
+}
+
+string sub absolute_path(string p) {
+    Dir d();
+    d.chdir(p);
+    return d.path();
 }
 
 sub run_bg(Process p, Main m) {

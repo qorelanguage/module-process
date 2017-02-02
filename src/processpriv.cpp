@@ -145,7 +145,7 @@ const char* ProcessPriv::optsWDir(const QoreHashNode *opts, ExceptionSink *xsink
         ret = s->getBuffer();
     }
 
-    return boost::filesystem::absolute(ret).string().data();
+    return ret;
 }
 
 boost::filesystem::path ProcessPriv::optsPath(const char* command, const QoreHashNode *opts, ExceptionSink *xsink)
@@ -180,7 +180,7 @@ boost::filesystem::path ProcessPriv::optsPath(const char* command, const QoreHas
     if (ret.empty()) {
         xsink->raiseException("PROCESS-SEARCH-PATH-ERROR", "Command '%s' cannot be found in PATH", command);
     }
-    return ret;
+    return boost::filesystem::absolute(ret);
 }
 
 int ProcessPriv::exitCode(ExceptionSink *xsink) {
