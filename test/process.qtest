@@ -30,6 +30,7 @@ public class Main inherits QUnit::Test {
         addTestCase("Env vars test", \envVarsTest());
         addTestCase("Env var negative test", \envVarsNegativeTest());
         addTestCase("working dir test", \cwdTest());
+        addTestCase("custom PATH test negative", \pathTestNegative());
 
         # Return for compatibility with test harness that checks return value.
         set_return_value(main());
@@ -221,7 +222,7 @@ public class Main inherits QUnit::Test {
         bool have_stderr = False;
 
         hash opts = (
-                "path" : absolute_path(".")+":"+ENV.PATH,
+                "path" : ( absolute_path("."), ),
             );
         Process p("test_io.q", opts);
         p.write(str);
@@ -264,7 +265,7 @@ public class Main inherits QUnit::Test {
 
     envVarsTest() {
         hash opts_p = (
-                "path" : absolute_path("."),
+                "path" : ( absolute_path("."), ),
             );
         list cases = (
                 ( "args" : ( "FOO", "bar"),
@@ -309,7 +310,7 @@ public class Main inherits QUnit::Test {
     cwdTest() {
         hash opts = (
                 "cwd" : "/tmp",
-                "path" : absolute_path("."),
+                "path" : ( absolute_path("."), ),
             );
         Process p("test_cwd.q", opts);
         while (*string e = p.readStdout()) {
@@ -317,6 +318,21 @@ public class Main inherits QUnit::Test {
         }
         p.wait();
         assertEq(0, p.exitCode(), "process exit code");
+    }
+
+    pathTestNegative() {
+        hash opts = (
+                "path" : ( "/", ),
+            );
+        try {
+            Process p("true", opts);
+            p.wait();
+            assertEq(0, p.exitCode(), "process exit code");
+        }
+        catch (hash ex) {
+            assertEq("PROCESS-SEARCH-PATH-ERROR", ex.err, "ex.err check");
+            assertEq("Command 'true' cannot be found in PATH", ex.desc, "ex.desc check");
+        }
     }
 }
 

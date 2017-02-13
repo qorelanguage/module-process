@@ -154,24 +154,24 @@ boost::filesystem::path ProcessPriv::optsPath(const char* command, const QoreHas
 
     if (opts && opts->existsKey("path")) { // TODO/FIXME: maybe a list only as path? Add support for prepend? append? replace?
         const AbstractQoreNode *n = opts->getKeyValue("path");
-        QoreStringValueHelper s(n);
-        // fake path decomposition
-        bp::environment e;
-        e["PATH"] = s->getBuffer();
-        auto pathstr = e["PATH"].to_vector();
-        std::vector<boost::filesystem::path> paths;
-        for (auto n : pathstr) {
-            paths.push_back(boost::filesystem::path(n));
-            //std::cout << n << std::endl;
+        if (n->getType() != NT_LIST) {
+            xsink->raiseException("PROCESS-OPTIONS-ERROR",
+                                  "Path option must be a list of strings, got: '%s'(%d)",
+                                  n->getTypeName(),
+                                  n->getType()
+                                 );
+            return ret;
         }
+
+        const QoreListNode *l = reinterpret_cast<const QoreListNode *>(n);
+        std::vector<boost::filesystem::path> paths;
+
+        for (qore_size_t i = 0; i < l->size(); i++) {
+            QoreStringValueHelper s(l->retrieve_entry(i));
+            paths.push_back(boost::filesystem::path(s->getBuffer()));
+        }
+
         ret = bp::search_path(command, paths);
-#if 0
-        std::vector<boost::filesystem::path> paths = ::boost::this_process::path();
-        // https://github.com/klemens-morgenstern/boost-process/issues/53
-        // TODO/FIXME: so I'm trying to prepend the path with content of the string for now
-        paths.insert(paths.begin(), boost::filesystem::path(s->getBuffer()));
-        ret = bp::search_path(command, paths);
-#endif
     }
     else {
         ret = bp::search_path(command);
