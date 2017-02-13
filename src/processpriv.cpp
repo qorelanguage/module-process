@@ -102,7 +102,10 @@ const ResolvedCallReferenceNode* ProcessPriv::optsExecutor(const char * name, co
 
 bp::environment ProcessPriv::optsEnv(const QoreHashNode *opts, ExceptionSink *xsink)
 {
-    bp::environment ret = boost::this_process::environment();
+    // as agreed - we are not merging current process env. We are replacing.
+    // The "merge" can be done with global ENV hash
+    // bp::environment ret = boost::this_process::environment();
+    bp::environment ret;
 
     if (opts && opts->existsKey("env")) {
         const AbstractQoreNode *n = opts->getKeyValue("env");
@@ -121,9 +124,11 @@ bp::environment ProcessPriv::optsEnv(const QoreHashNode *opts, ExceptionSink *xs
             QoreStringValueHelper val(it.getValue());
             ret[it.getKey()] = val->getBuffer();
         }
-    }
 
-    return ret;
+        return ret;
+    }
+    else
+        return boost::this_process::environment();
 }
 
 const char* ProcessPriv::optsCwd(const QoreHashNode *opts, ExceptionSink *xsink)
@@ -152,7 +157,7 @@ boost::filesystem::path ProcessPriv::optsPath(const char* command, const QoreHas
 {
     boost::filesystem::path ret;
 
-    if (opts && opts->existsKey("path")) { // TODO/FIXME: maybe a list only as path? Add support for prepend? append? replace?
+    if (opts && opts->existsKey("path")) {
         const AbstractQoreNode *n = opts->getKeyValue("path");
         if (n->getType() != NT_LIST) {
             xsink->raiseException("PROCESS-OPTIONS-ERROR",
