@@ -24,7 +24,7 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
     bp::environment e = optsEnv(opts, xsink);
     boost::filesystem::path p = optsPath(command, opts, xsink);
 
-    const char* wdir = optsWDir(opts, xsink);
+    const char* cwd = optsCwd(opts, xsink);
 
     if (xsink->isException()) {
         return;
@@ -47,7 +47,7 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
         m_process = new bp::child(bp::exe = p.string(),
                                   bp::args = a,
                                   bp::env = e,
-                                  bp::start_dir = wdir,
+                                  bp::start_dir = cwd,
                                   // TODO/FIXME: bp::shell flag on demand from options
                                   QoreProcessHandler(xsink,
                                                      on_success,
@@ -126,16 +126,16 @@ bp::environment ProcessPriv::optsEnv(const QoreHashNode *opts, ExceptionSink *xs
     return ret;
 }
 
-const char* ProcessPriv::optsWDir(const QoreHashNode *opts, ExceptionSink *xsink)
+const char* ProcessPriv::optsCwd(const QoreHashNode *opts, ExceptionSink *xsink)
 {
     const char * ret = ".";
 
-    if (opts && opts->existsKey("wdir")) {
-        const AbstractQoreNode *n = opts->getKeyValue("wdir");
+    if (opts && opts->existsKey("cwd")) {
+        const AbstractQoreNode *n = opts->getKeyValue("cwd");
         if (n->getType() != NT_STRING)
         {
             xsink->raiseException("PROCESS-OPTIONS-ERROR",
-                                  "Working dir 'wdir' option must be a string, got: '%s'(%d)",
+                                  "Working dir 'cwd' option must be a string, got: '%s'(%d)",
                                   n->getTypeName(),
                                   n->getType()
                                  );
