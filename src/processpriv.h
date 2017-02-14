@@ -15,6 +15,8 @@ protected:
     DLLLOCAL virtual ~ProcessPriv();
 
 public:
+    DLLLOCAL ProcessPriv(pid_t pid, ExceptionSink *xsink);
+
     DLLLOCAL ProcessPriv(const char* command, const QoreListNode* arguments, const QoreHashNode *opts, ExceptionSink *xsink);
 
     DLLLOCAL int exitCode(ExceptionSink *xsink);
@@ -28,6 +30,8 @@ public:
     DLLLOCAL bool wait(ExceptionSink *xsink);
 
     DLLLOCAL bool wait(int64 t, ExceptionSink *xsink);
+
+    DLLLOCAL bool detach(ExceptionSink *xsink);
 
     DLLLOCAL bool terminate(ExceptionSink *xsink);
 

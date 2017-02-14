@@ -11,6 +11,13 @@ qclass Process [dom=PROCESS; arg=ProcessPriv* priv; ns=Qore::Process];
 //! todo/fixme
 /**
  */
+Process::constructor(int pid) {
+    self->setPrivate(CID_PROCESS, new ProcessPriv(pid, xsink));
+}
+
+//! todo/fixme
+/**
+ */
 Process::constructor(string command) {
     self->setPrivate(CID_PROCESS, new ProcessPriv(command->getBuffer(), 0, 0, xsink));
 }
@@ -78,6 +85,13 @@ bool Process::running() {
  */
 bool Process::wait() {
     return priv->wait(xsink);
+}
+
+//! todo/fixme
+/**
+ */
+nothing Process::detach() {
+    priv->detach(xsink);
 }
 
 //! todo/fixme

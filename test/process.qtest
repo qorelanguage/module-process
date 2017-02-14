@@ -31,6 +31,8 @@ public class Main inherits QUnit::Test {
         addTestCase("Env var negative test", \envVarsNegativeTest());
         addTestCase("working dir test", \cwdTest());
         addTestCase("custom PATH test negative", \pathTestNegative());
+        addTestCase("detach test", \detachTest());
+        addTestCase("detach test negative", \detachTestNegative());
 
         # Return for compatibility with test harness that checks return value.
         set_return_value(main());
@@ -332,6 +334,35 @@ public class Main inherits QUnit::Test {
         catch (hash ex) {
             assertEq("PROCESS-SEARCH-PATH-ERROR", ex.err, "ex.err check");
             assertEq("Command 'true' cannot be found in PATH", ex.desc, "ex.desc check");
+        }
+    }
+
+    detachTest() {
+        int pid;
+        {
+            Process p("sleep", 2);
+            pid = p.id();
+            p.detach();
+        }
+
+        {
+            Process p(pid);
+            assertEq(True, p.running(), "Detached process is not running");
+            p.terminate();
+            p.wait();
+        }
+    }
+
+    detachTestNegative() {
+        int pid;
+        {
+            Process p("sleep", 2);
+            pid = p.id();
+        }
+
+        {
+            Process p(pid);
+            assertEq(False, p.running(), "Detached process is running");
         }
     }
 }

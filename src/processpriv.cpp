@@ -11,6 +11,16 @@ namespace ex = boost::process::extend;
 #define PROCESS_CHECK(RET) if (!m_process) { xsink->raiseException("PROCESS-CHECK-ERROR", "Process is not initialized"); return (RET); }
 
 
+ProcessPriv::ProcessPriv(pid_t pid, ExceptionSink *xsink)
+{
+    try {
+        m_process = new bp::child(pid);
+    }
+    catch (const std::exception &ex) {
+        xsink->raiseException("PROCESS-CONSTRUCTOR-ERROR", ex.what());
+    }
+}
+
 ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, const QoreHashNode *opts, ExceptionSink *xsink)
     : m_process(0)
 {
@@ -269,6 +279,13 @@ bool ProcessPriv::wait(int64 t, ExceptionSink *xsink)
     }
 
     return false;
+}
+
+bool ProcessPriv::detach(ExceptionSink *xsink)
+{
+    PROCESS_CHECK(false);
+    m_process->detach();
+    return true;
 }
 
 QoreStringNode* ProcessPriv::readStderr()
