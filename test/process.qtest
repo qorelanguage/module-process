@@ -33,6 +33,7 @@ public class Main inherits QUnit::Test {
         addTestCase("custom PATH test negative", \pathTestNegative());
         addTestCase("detach test", \detachTest());
         addTestCase("detach test negative", \detachTestNegative());
+        addTestCase("wait timeout", \waitTimeoutTest());
 
         # Return for compatibility with test harness that checks return value.
         set_return_value(main());
@@ -364,6 +365,14 @@ public class Main inherits QUnit::Test {
             Process p(pid);
             assertEq(False, p.running(), "Detached process is running");
         }
+    }
+
+    waitTimeoutTest() {
+        Process p("sleep", 3);
+        while (!p.wait(1)) {
+            if (VERBOSE) printf("timeout\n");
+        }
+        assertEq(0, p.exitCode(), "process exit code");
     }
 }
 

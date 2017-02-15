@@ -5,6 +5,24 @@
 
 /** @mainpage %Qore %Process Module
 
+A Qore wrapper around Boost.Process by  Klemens David Morgenstern .
+
+This module is released under a choice of two licenses:
+
+ - LGPL 2.1
+ - MIT (see COPYING.MIT in the source distribution for more information)
+
+Boost parts in src/boost are distributed underthe Boost Software License,
+Version 1.0. (See accompanying file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+
+Process is a module to manage system processes. It can be used to:
+
+ - create child processes
+ - communicate with child processes through standard input/output/error
+ - wait for processes to exit
+ - terminate processes
+ - and more
+
 */
 
 static QoreNamespace ProcessNS("Process");

@@ -2,171 +2,358 @@
 
 #include "processpriv.h"
 
-//! Implementation of Process class
-/**
+//! System process wrapper.
+/** A process is an independently executable entity, which is different
+    from a thread, in that it has it's own resources. Those include
+    memory and hardware resources.
+
+    Every process is identified by a unique number, called the process
+    identification digit, pid.
+
+    A process will return an integer value indicating whether it was
+    successful. On posix there are more codes associated with that,
+    but not so on windows. Therefore there is not such encoding currently
+    in the library. However an exit code of zero means the process was
+    successful, while one different than zero indicates an error.
+
+    Processes can also be forced to exit. There are two ways to do this,
+    signal the process to so and wait, and just terminate the
+    process without conditions.
+
+    Usually the first approach is to signal an exit request,
+    but windows - unlike posix - does not provide a consistent way
+    to do this. Hence this is not part of the library and only
+    the hard terminate is.
+
+    The environment is a map of variables local to every process. The
+    most significant one for this library is the PATH variable,
+    which containes a list of paths, that ought to be searched for
+    executables. A shell will do this automatically, while this
+    library provides a function for that.
+
+    The child process will be destroeyd immediatelly when an instance of
+    Process class is destructed, except you call \c detach().
+
+    The simplest usage of Process is:
+
+    @code
+%new-style
+%requires process
+
+Process p("ls");
+p.wait();
+    @endcode
+
+    @section process_options Process Options
+
+    The \c opts hash can hold following keys. All keys are optional.
+
+    - \c env : replace current process' ENV with a hash of env variables.
+               Use @code ENV + ( "FOO" : "bar") @endcode is you want to merge parent's ENV to child.
+    - \c cwd : a string with initial "current working directory",
+               a dir which child should take as its initial work dir
+    - \c path : a list of strings. It's a custom search path to find \c command
+                in the Process constructors. If it's not given, parent's ENV PATH is used.
+                This value is not passed to child's ENV at all.
+    - \c on_success : a code/call closure with prototype <tt>sub (hash e)</tt>.
+                      This handler is invoked if launching the process has succeeded.
+    - \c on_setup : a code/call closure with prototype <tt>sub (hash e)</tt>.
+                    This handler is invoked before the process in launched, to setup parameters
+    - \c on_error : a code/call closure with prototype <tt>sub (hash e)</tt>.
+                    This handler is invoked if an error during launch occured.
+    - \c on_fork_error : a code/call closure with prototype <tt>sub (hash e)</tt>.
+                         This handler is invoked if the fork failed.
+                         Posix only.
+    - \c on_exec_setup : a code/call closure with prototype <tt>sub (hash e)</tt>.
+                         This handler is invoked if the fork succeeded.
+                         Posix only.
+    - \c on_exec_error : a code/call closure with prototype <tt>sub (hash e)</tt>.
+                         This handler is invoked if the exec call errored.
+                         Posix only.
+
+    Option example:
+
+    @code
+%new-style
+%requires process
+
+sub executor_func(hash e) {
+    printf("on_setup: %n\n", e);
+}
+
+hash opts = (
+    "env" : ( "FOO" : "bar"),
+    "cwd" : "/tmp",
+    "on_success" : sub (hash e) { # a closure is used
+        printf("on_success: %n\n", e);
+    },
+    "on_setup" : \executor_func(), # a call ref
+);
+
+Process p("true", opts);
+p.wait();
+int ret = p.exitCode();
+    @endcode
+
+output of the script will be:
+
+    @code
+on_setup: hash: (name : "on_setup", exe : "/usr/bin/true", pid : -1, exit : 127, error_code : 0, error_message : "Success", error_category : "system")
+on_success: hash: (name : "on_success", exe : "/usr/bin/true", pid : 23014, exit : 127, error_code : 0, error_message : "Success", error_category : "system")    @endcode
+
  */
 qclass Process [dom=PROCESS; arg=ProcessPriv* priv; ns=Qore::Process];
 
 
-//! todo/fixme
-/**
+//! Construct the child from a pid.
+/** There is no guarantee that this will work. The process need the right
+    access rights, which are very platform specific.
+
+    The process with that PID must exist before.
  */
 Process::constructor(int pid) {
     self->setPrivate(CID_PROCESS, new ProcessPriv(pid, xsink));
 }
 
-//! todo/fixme
-/**
+//! Construct a child from given arguments and launch it.
+/** @param command a string with program to be run
+
+    @throw PROCESS-CONSTRUCTOR-ERROR in case of error. Exception \c desc contains the additional information
+    @throw PROCESS-SEARCH-PATH-ERROR in case when the \c command is not found in given PATH
  */
 Process::constructor(string command) {
     self->setPrivate(CID_PROCESS, new ProcessPriv(command->getBuffer(), 0, 0, xsink));
 }
 
-//! todo/fixme
-/**
+//! Construct a child from given arguments and launch it.
+/** @param command a string with program to be run
+    @param opts a hash with additional options for the child process @ref process_options
+
+    @throw PROCESS-CONSTRUCTOR-ERROR in case of error. Exception \c desc contains the additional information
+    @throw PROCESS-OPTIONS-ERROR in case when some invalid option is passed
+    @throw PROCESS-SEARCH-PATH-ERROR in case when the \c command is not found in given PATH
  */
 Process::constructor(string command, hash opts) {
     self->setPrivate(CID_PROCESS, new ProcessPriv(command->getBuffer(), 0, opts, xsink));
 }
 
-//! todo/fixme
-/**
+//! Construct a child from given arguments and launch it.
+/** @param command a string with program to be run
+    @param arguments a list with additiona \c command arguments
+
+    @throw PROCESS-CONSTRUCTOR-ERROR in case of error. Exception \c desc contains the additional information
+    @throw PROCESS-SEARCH-PATH-ERROR in case when the \c command is not found in given PATH
  */
 Process::constructor(string command, softlist arguments) {
     self->setPrivate(CID_PROCESS, new ProcessPriv(command->getBuffer(), arguments, 0, xsink));
 }
 
-//! todo/fixme
-/**
+//! Construct a child from given arguments and launch it.
+/** @param command a string with program to be run
+    @param arguments a list with additiona \c command arguments
+    @param opts a hash with additional options for the child process. See @ref process_options
+
+    @throw PROCESS-CONSTRUCTOR-ERROR in case of error. Exception \c desc contains the additional information
+    @throw PROCESS-OPTIONS-ERROR in case when some invalid option is passed
+    @throw PROCESS-SEARCH-PATH-ERROR in case when the \c command is not found in given PATH
  */
 Process::constructor(string command, softlist arguments, hash opts) {
     self->setPrivate(CID_PROCESS, new ProcessPriv(command->getBuffer(), arguments, opts, xsink));
 }
 
-
 //! Copy method - instance of this class cannot be copied.
 /**
-    @throw PROCESS-COPY-ERROR	- Copying of Process objects is not supported
+    @throw PROCESS-COPY-ERROR - Copying of Process objects is not supported
  */
 Process::copy() {
    xsink->raiseException("PROCESS-COPY-ERROR", "copying Proces objects is currently not supported");
 }
 
-//! todo/fixme
-/**
+//! Get the child process' exit code.
+/** The return value is without any meaning if the child wasn't waited for or if it was terminated.
+
+    @return int an exit code
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
 int Process::exitCode() {
     return priv->exitCode(xsink);
 }
 
-//! todo/fixme
-/**
+//! Get the Process Identifier.
+/** @return int a child's PID
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
 int Process::id() {
     return priv->id(xsink);
 }
 
-//! todo/fixme
-/**
+//! Check if this handle holds a child process.
+/** That does not mean, that the process is still running. It only means, that the handle does or did exist.
+
+    @return bool \c True in case of valid child handle
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
 bool Process::valid() {
     return priv->valid(xsink);
 }
 
-//! todo/fixme
-/**
+//! Check if the child process is running.
+/** @return bool True if the child is running
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
 bool Process::running() {
     return priv->running(xsink);
 }
 
-//! todo/fixme
-/**
+//! Wait for the child process to exit.
+/** @return bool always returns True to keep compatibility with wait(timeout) version
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+
+    Example:
+    @code
+Process p("sleep", 3);
+p.wait(); # a blocking/wait call
+printf("Sleep finished with code: %d\n", p.exitCode());
+    @endcode
  */
 bool Process::wait() {
     return priv->wait(xsink);
 }
 
-//! todo/fixme
-/**
- */
-nothing Process::detach() {
-    priv->detach(xsink);
-}
+//! Wait for the child process to exit.
+/** @param t a timeout to wait
 
-//! todo/fixme
-/**
+    @return bool True if child exited while waiting. False in case of timeout
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+
+    Example:
+    @code
+Process p("sleep", 3);
+while (!p.wait(1)) {
+    printf("I'm doing something here...\n");
+}
+printf("Sleep finished with code: %d\n", p.exitCode());
+    @endcode
  */
 bool Process::wait(timeout t) {
     return priv->wait(t, xsink);
 }
 
-//! todo/fixme
+//! Detach the child, i.e. let it run after this handle dies.
 /**
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+ */
+nothing Process::detach() {
+    priv->detach(xsink);
+}
+
+//! Terminate the child process.
+/** This function will cause the child process to unconditionally
+    and immediately exit. It is implement with SIGKILL on posix
+    and TerminateProcess on windows.
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
 nothing Process::terminate() {
     priv->terminate(xsink);
 }
 
-//! todo/fixme
-/**
+//! Write into child's \c stdin
+/** @param s a string data to be writen
+
+    @note an end of line (EOL) is appended automatically
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
 nothing Process::write(string s) {
     priv->write(s->getBuffer(), xsink);
 }
 
-//! todo/fixme
-/**
+//! Write into child's \c stdin
+/** @param b a binary data to be writen
+
+    @note an end of line (EOL) is appended automatically
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
 nothing Process::write(binary b) {
     priv->write(b->getPtr(), xsink);
 }
 
-//! todo/fixme
-/**
+//! Write into child's \c stdin
+/** @param i an integer to be writen
+
+    @note an end of line (EOL) is appended automatically
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
 nothing Process::write(int i) {
     priv->write(i, xsink);
 }
 
-//! todo/fixme
-/**
+//! Write into child's \c stdin
+/** @param f a float to be writen
+
+    @note an end of line (EOL) is appended automatically
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
 nothing Process::write(float f) {
     priv->write(f, xsink);
 }
 
-//! todo/fixme
-/**
+//! Write into child's \c stdin
+/** @param n a number to be writen
+
+    @note an end of line (EOL) is appended automatically
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
 nothing Process::write(number n) {
     QoreStringNodeValueHelper s(n);
     priv->write(s->getBuffer(), xsink);
 }
 
-//! todo/fixme
-/**
+//! Read from child process' standard output
+/** @return string with data
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
 string Process::readStdout() {
     return priv->readStdout();
 }
 
-//! todo/fixme
-/**
+//! Read from child process' standard error
+/** @return string with data
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
 string Process::readStderr() {
     return priv->readStderr();
 }
 
-//! todo/fixme
-/**
+//! Search for full path of command in current process' PATH
+/** @param command a string with command name
+
+    @return string with full path of the \c command
+
+    @throw PROCESS-SEARCH-PATH-ERROR in case when the \c command is not found in given PATH
  */
 static *string Process::searchPath(string command) {
     return new QoreStringNode(ProcessPriv::optsPath(command->getBuffer(), 0, xsink).string());
 }
 
-//! todo/fixme
-/**
+//! Search for full path of command in current process' PATH
+/** @param command a string with command name
+    @param opts a hash with process options. @ref process_options - \c path is important here
+
+    @return string with full path of the \c command
+
+    @throw PROCESS-SEARCH-PATH-ERROR in case when the \c command is not found in given PATH
  */
 static *string Process::searchPath(string command, hash opts) {
     return new QoreStringNode(ProcessPriv::optsPath(command->getBuffer(), opts, xsink).string());
