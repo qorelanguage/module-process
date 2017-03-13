@@ -255,7 +255,7 @@ public class Main inherits QUnit::Test {
     }
 
     threadTest() {
-        Process p("tee", "-");
+        Process p("tee");
         assertEq(True, p.id() > 0, "PID must be given");
         assertEq(True, p.valid(), "process must be valid");
         assertEq(True, p.running(), "process must be running");
