@@ -4,7 +4,9 @@
 Requirements:
  - Qore development environment (lib and headers)
  - Cmake
- - (optional) DOxygen
+ - (optional) Doxygen
+ - boost >= 1.63: system, filesystem or use -DUSE_INTERNAL_BOOST=1
+   to use an internal copy of boost submodules
 
 Use so called "out of source" build
 

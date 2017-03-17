@@ -2,6 +2,14 @@ cmake_minimum_required(VERSION 2.8.3)
 
 project(qore-process-module)
 
+# internal copy of boost was prepared by:
+# tar xjf boost_1_63_0.tar.bz2
+# cd boost_1_63_0/
+# ./bootstrap.sh
+# ./b2 tools/bcp
+# ./dist/bin/bcp filesystem ~/src/qore/module-process/src/
+option(USE_INTERNAL_BOOST "Enforce using internal copy of boost libraries" OFF)
+
 set (VERSION_MAJOR 0)
 set (VERSION_MINOR 0)
 set (VERSION_PATCH 1)
@@ -12,7 +20,16 @@ set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake )
 
 find_package(Qore REQUIRED)
 #find_package(Threads REQUIRED)
-find_package(Boost 1.60 REQUIRED COMPONENTS filesystem system)
+if (NOT USE_INTERNAL_BOOST)
+    find_package(Boost 1.63 COMPONENTS filesystem system)
+endif (NOT USE_INTERNAL_BOOST)
+
+if (Boost_FOUND)
+    message(STATUS "Boost libs found: ${Boost_INCLUDE_DIRS} : ${Boost_LIBRARIES}")
+else (Boost_FOUND)
+    message(WARNING "Boost NOT found - using internal copy of boost libs")
+    set(BOOST_INTERNAL 1)
+endif (Boost_FOUND)
 
 
 include(CheckCXXCompilerFlag)
@@ -149,6 +166,22 @@ set(CPP_SRC
     src/boost/process/exception.hpp
     src/boost/process.hpp
 )
+
+if (BOOST_INTERNAL)
+    set (CPP_SRC ${CPP_SRC}
+            src/libs/system/src/error_code.cpp
+            src/libs/filesystem/src/codecvt_error_category.cpp
+            src/libs/filesystem/src/operations.cpp
+            src/libs/filesystem/src/path.cpp
+            src/libs/filesystem/src/path_traits.cpp
+            src/libs/filesystem/src/portability.cpp
+            src/libs/filesystem/src/unique_path.cpp
+            src/libs/filesystem/src/utf8_codecvt_facet.cpp
+            src/libs/filesystem/src/windows_file_codecvt.cpp
+            src/libs/filesystem/src/windows_file_codecvt.hpp
+        )
+endif (BOOST_INTERNAL)
+
 set(QPP_SRC
     src/process.qpp
     src/QC_Process.qpp
