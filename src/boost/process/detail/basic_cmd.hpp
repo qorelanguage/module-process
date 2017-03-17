@@ -144,7 +144,7 @@ struct char_converter<char, arg_setter_<wchar_t, false>>
 template<>
 struct char_converter<wchar_t, arg_setter_<char, false>>
 {
-    static arg_setter_<wchar_t, false> conv2(const arg_setter_<char, false> & in)
+    static arg_setter_<wchar_t, false> conv(const arg_setter_<char, false> & in)
     {
         std::vector<std::wstring> vec(in._args.size());
         std::transform(in._args.begin(), in._args.end(), vec.begin(),
@@ -289,4 +289,4 @@ struct initializer_builder<cmd_or_exe_tag<wchar_t>>
 
 
 
-#endif /* INCLUDE_BOOST_PROCESS_DETAIL_EXE_BUILDER_HPP_ */
+#endif /* BOOST_PROCESS_DETAIL_EXE_BUILDER_HPP_ */

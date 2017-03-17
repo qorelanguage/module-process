@@ -22,7 +22,46 @@
 #include <errno.h>
 #include <unistd.h>
 
+#if !defined(__GLIBC__)
+#include <boost/algorithm/string/predicate.hpp>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/classification.hpp>
+#endif
+
 namespace boost { namespace process { namespace detail { namespace posix {
+
+inline int execvpe(const char* filename, char * const arg_list[], char* env[])
+{
+#if defined(__GLIBC__)
+    return ::execvpe(filename, arg_list, env);
+#else
+    //use my own implementation
+    std::string fn = filename;
+    if ((fn.find('/') == std::string::npos) && ::access(fn.c_str(), X_OK))
+    {
+        auto e = ::environ;
+        while ((*e != nullptr) && !boost::starts_with(*e, "PATH="))
+            e++;
+
+        if (e != nullptr)
+        {
+            std::vector<std::string> path; 
+            boost::split(path, *e, boost::is_any_of(":"));
+
+            for (const std::string & pp : path)
+            {
+                auto p = pp + "/" + filename;
+                if (!::access(p.c_str(), X_OK))
+                {
+                    fn = p;
+                    break;
+                }
+            }
+        }
+    }
+    return ::execve(fn.c_str(), arg_list, env);
+#endif
+}
 
 template<typename Executor>
 struct on_setup_t
@@ -277,6 +316,7 @@ public:
     Sequence & seq;
     const char * exe      = nullptr;
     char *const* cmd_line = nullptr;
+    bool cmd_style = false;
     char **env      = ::environ;
     pid_t pid = -1;
     std::shared_ptr<std::atomic<int>> exit_status = std::make_shared<std::atomic<int>>(still_active);
@@ -308,7 +348,10 @@ child executor<Sequence>::invoke(boost::mpl::true_, boost::mpl::false_) //ignore
     else if (pid == 0)
     {
         boost::fusion::for_each(seq, call_on_exec_setup(*this));
-        ::execve(exe, cmd_line, env);
+        if (cmd_style)
+            ::boost::process::detail::posix::execvpe(exe, cmd_line, env);
+        else
+            ::execve(exe, cmd_line, env);
         auto ec = boost::process::detail::get_last_error();
         boost::fusion::for_each(seq, call_on_exec_error(*this, ec));
         _exit(EXIT_FAILURE);
@@ -360,8 +403,10 @@ child executor<Sequence>::invoke(boost::mpl::false_, boost::mpl::false_)
         ::close(p[0]);
 
         boost::fusion::for_each(seq, call_on_exec_setup(*this));
-
-        ::execve(exe, cmd_line, env);
+        if (cmd_style)
+            ::boost::process::detail::posix::execvpe(exe, cmd_line, env);
+        else
+            ::execve(exe, cmd_line, env);
         _ec = boost::process::detail::get_last_error();
         _msg = "execve failed";
         boost::fusion::for_each(seq, call_on_exec_error(*this, _ec));
@@ -454,7 +499,11 @@ child executor<Sequence>::invoke(boost::mpl::false_, boost::mpl::true_)
     {
         boost::fusion::for_each(seq, call_on_exec_setup(*this));
 
-        ::execve(exe, cmd_line, env);
+        if (cmd_style)
+            ::boost::process::detail::posix::execvpe(exe, cmd_line, env);
+        else
+            ::execve(exe, cmd_line, env);
+
         _ec = boost::process::detail::get_last_error();
         _msg = "execve failed";
         boost::fusion::for_each(seq, call_on_exec_error(*this, _ec));
