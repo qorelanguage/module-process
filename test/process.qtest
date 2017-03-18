@@ -1,4 +1,5 @@
 #!/usr/bin/env qore
+# -*- mode: qore; indent-tabs-mode: nil -*-
 
 %new-style
 
@@ -9,10 +10,15 @@
 
 # to be used in static methods and separate functions
 our *softbool VERBOSE;
-our object MAIN; # sort of hack...
+our Main MAIN; # sort of hack...
 
 
 public class Main inherits QUnit::Test {
+
+    private {
+        # prefix to find other test scripts
+        string m_pfx = get_script_dir() + DirSep;
+    }
 
     constructor() : Test("Process", "1.0") {
         VERBOSE = m_options.verbose;
@@ -47,7 +53,8 @@ public class Main inherits QUnit::Test {
 
     searchPathTest() {
         any s = Process::searchPath("ls");
-        assertEq("/usr/bin/ls", s, "searchPath for ls");
+        # heuristic to find ls
+        assertEq(dirname(ENV.SHELL) + "/ls", s, "searchPath for ls");
 
         try {
             Process::searchPath("some-not-existing-exec");
@@ -227,7 +234,7 @@ public class Main inherits QUnit::Test {
         hash opts = (
                 "path" : ( absolute_path("."), ),
             );
-        Process p("test_io.q", opts);
+        Process p(m_pfx + "test_io.q", opts);
         p.write(str);
 
         int ix = 0;
@@ -282,12 +289,12 @@ public class Main inherits QUnit::Test {
         ListIterator it(cases);
         while (it.next()) {
             hash a = it.getValue();
-            Process p("test_env.q", a.args, a.opts);
+            Process p(m_pfx + "test_env.q", a.args, a.opts);
             p.wait();
             int ret = p.exitCode();
 
 
-            assertEq(a.ret, ret, sprintf("env var retval for %n", a));
+            assertEq(a.ret, ret, sprintf("env var retval for %y", a));
         }
     }
 
@@ -312,10 +319,10 @@ public class Main inherits QUnit::Test {
 
     cwdTest() {
         hash opts = (
-                "cwd" : "/tmp",
+                "cwd" : realpath("/tmp"),
                 "path" : ( absolute_path("."), ),
             );
-        Process p("test_cwd.q", opts);
+        Process p(m_pfx + "test_cwd.q", opts);
         while (*string e = p.readStdout()) {
             assertEq(opts.cwd, e, "cwd value read from stdout");
         }
