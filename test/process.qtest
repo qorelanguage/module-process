@@ -4,19 +4,70 @@
 
 %requires process
 %requires QUnit
+%requires Util
 
 %exec-class Main
 
 # to be used in static methods and separate functions
 our *softbool VERBOSE;
-our object MAIN; # sort of hack...
-
+our Main MAIN;
 
 public class Main inherits QUnit::Test {
+    private {
+        # prefix to find other test scripts
+        string m_prefix;
+
+        hash m_test_paths = (
+            "LINUX" : (
+                "searchPathTest_in" : "ls",
+                "searchPathTest_out" : "/usr/bin/ls",
+                "constructorTest_exe" : "true",
+                "constructorTest_arg" : 1,
+                "simpleTest_exe" : "ls",
+                "simpleTest_arg" : ("-l" , "-s",),
+                "executorsTest_exe" : "true",
+                "envVarsNegativeTest_exe" : "true",
+                "pathTestNegative_exe" : "true",
+                "detachTest_exe" : "sleep",
+                "waitTimeoutTest_exe" : "sleep",
+            ),
+            "WINDOWS" : (
+                "searchPathTest_in" : "timeout",
+                "searchPathTest_out" : dirname(ENV.SHELL) + "/ls",
+                "constructorTest_exe" : "true",
+                "constructorTest_arg" : 1,
+                "simpleTest_exe" : "ls",
+                "simpleTest_arg" : ("-l" , "-s",),
+                "executorsTest_exe" : "true",
+                "envVarsNegativeTest_exe" : "true",
+                "pathTestNegative_exe" : "true",
+                "detachTest_exe" : "timeout",
+                "waitTimeoutTest_exe" : "timeout",
+            ),
+            "DARWIN" : (
+                "searchPathTest_in" : "ls",
+                "searchPathTest_out" : dirname(ENV.SHELL) + "/ls",
+                "constructorTest_exe" : "true",
+                "constructorTest_arg" : 1,
+                "simpleTest_exe" : "ls",
+                "simpleTest_arg" : ("-l" , "-s",),
+                "executorsTest_exe" : "true",
+                "envVarsNegativeTest_exe" : "true",
+                "pathTestNegative_exe" : "true",
+                "detachTest_exe" : "sleep",
+                "waitTimeoutTest_exe" : "sleep",
+            ),
+        );
+    }
 
     constructor() : Test("Process", "1.0") {
         VERBOSE = m_options.verbose;
         MAIN = self;
+
+        # expand relative path to a fully qualified one
+        Dir d();
+        d.chdir(get_script_dir());
+        m_prefix = d.path() + DirSep;
 
         addTestCase("searchPath test", \searchPathTest());
         addTestCase("Constructor test", \constructorTest());
@@ -39,6 +90,19 @@ public class Main inherits QUnit::Test {
         set_return_value(main());
     }
 
+    any getTestValue(string key) {
+        string os = Qore::PlatformOS.upr();
+        if (!m_test_paths.hasKey(os)) {
+            throw "MISSING-TEST-SETUP", sprintf("There is no TEST_PATHS setup for OS: %s, known OSes: %n", os, m_test_paths.keys());
+        }
+
+        if (!m_test_paths{os}.hasKey(key)) {
+            throw "MISSING-TEST-SETUP", sprintf("There is no TEST_PATHS setup for OS: %s, test_name: %s", os, key);
+        }
+
+        return m_test_paths{os}{key};
+    }
+
     globalSetUp() {
     }
 
@@ -46,8 +110,8 @@ public class Main inherits QUnit::Test {
     }
 
     searchPathTest() {
-        any s = Process::searchPath("ls");
-        assertEq("/usr/bin/ls", s, "searchPath for ls");
+        any s = Process::searchPath(getTestValue("searchPathTest_in"));
+        assertEq(getTestValue("searchPathTest_out"), s, sprintf("searchPath for %s", getTestValue("searchPathTest_in")));
 
         try {
             Process::searchPath("some-not-existing-exec");
@@ -63,25 +127,28 @@ public class Main inherits QUnit::Test {
                 "env" : ( "FOO" : "bar" ),
             );
 
-        Process p1("true");
+        string exe = getTestValue("constructorTest_exe");
+        softlist args = getTestValue("constructorTest_arg");
+
+        Process p1(exe);
         p1.wait();
         assertEq(0, p1.exitCode(), "exit code p1");
 
-        Process p2("true", 1);
+        Process p2(exe, args);
         p2.wait();
         assertEq(0, p2.exitCode(), "exit code p2");
 
-        Process p3("true", opts);
+        Process p3(exe, opts);
         p3.wait();
         assertEq(0, p3.exitCode(), "exit code p3");
 
-        Process p4("true", 1, opts);
+        Process p4(exe, args, opts);
         p4.wait();
         assertEq(0, p4.exitCode(), "exit code p4");
     }
 
     simpleTest() {
-        Process p("ls", ("-l", "-s", )); # let's hope it's available in all OSes
+        Process p(getTestValue("simpleTest_exe"), getTestValue("simpleTest_arg"));
         assertEq(True, p.id() > 0, "PID must be given");
         assertEq(True, p.valid(), "process must be valid");
 
@@ -135,7 +202,7 @@ public class Main inherits QUnit::Test {
                 },
             );
 
-        Process p("true", opts);
+        Process p(getTestValue("executorsTest_exe"), opts);
         p.wait();
         int ret = p.exitCode();
         assertEq(0, ret, "expected 0 retval");
@@ -182,7 +249,7 @@ public class Main inherits QUnit::Test {
 
         ListIterator it(opts);
         while (it.next()) {
-            Process p("true", it.getValue());
+            Process p(getTestValue("executorsTest_exe"), it.getValue());
             p.wait();
             int ret = p.exitCode();
             assertEq(0, ret, "expected 0 retval");
@@ -194,7 +261,7 @@ public class Main inherits QUnit::Test {
             hash opts = (
                     "on_success" : 1,
                 );
-            Process p("true", opts);
+            Process p(getTestValue("executorsTest_exe"), opts);
         }
         catch (hash ex) {
             assertEq("PROCESS-OPTIONS-ERROR", ex.err, "on_success using integer: err");
@@ -208,7 +275,7 @@ public class Main inherits QUnit::Test {
             hash opts = (
                     "on_success" : sub (int i) {},
                 );
-            Process p("true", opts);
+            Process p(getTestValue("executorsTest_exe"), opts);
         }
         catch (hash ex) {
             assertEq("RUNTIME-TYPE-ERROR", ex.err, "on_success using code with no hash as arg: err");
@@ -225,7 +292,7 @@ public class Main inherits QUnit::Test {
         bool have_stderr = False;
 
         hash opts = (
-                "path" : ( absolute_path("."), ),
+                "path" : ( m_prefix, ),
             );
         Process p("test_io.q", opts);
         p.write(str);
@@ -268,26 +335,22 @@ public class Main inherits QUnit::Test {
 
     envVarsTest() {
         hash opts_p = (
-                "path" : ( absolute_path("."), ),
+                "path" : ( m_prefix, ),
             );
-        list cases = (
-                ( "args" : ( "FOO", "bar"),
-                  "opts" : ( "env" : ( "FOO" : "bar" ), ) + opts_p,
-                  "ret" : 0 ),
-                ( "args" : ( "PATH", get_script_dir()),
-                  "opts" : ( "env" : ( "PATH" : "foo" ), ) + opts_p,
-                  "ret" : 127 ), # TODO/FIXME: really 127? echo $? returns 3...
+        hash cases = (
+                "test1" : ( "FOO", "bar"),
+                "test2" : ( "FOO", 1),
             );
 
-        ListIterator it(cases);
+        HashIterator it(cases);
         while (it.next()) {
-            hash a = it.getValue();
-            Process p("test_env.q", a.args, a.opts);
+            list args = it.getValue();
+            hash opts = ("env" : (args[0] : args[1])) + opts_p;
+            Process p("test_env.q", args, opts); # no m_prefix here as we are testing "path" too
             p.wait();
             int ret = p.exitCode();
 
-
-            assertEq(a.ret, ret, sprintf("env var retval for %n", a));
+            assertEq(0, ret, sprintf("env var retval for %n: %n", it.getKey(), args));
         }
     }
 
@@ -297,7 +360,7 @@ public class Main inherits QUnit::Test {
             );
 
         try {
-            Process p("true", opts);
+            Process p(getTestValue("envVarsNegativeTest_exe"), opts);
             p.wait();
             assertEq(True, False, "envVarsNegativeTest cannot go here");
         }
@@ -312,8 +375,8 @@ public class Main inherits QUnit::Test {
 
     cwdTest() {
         hash opts = (
-                "cwd" : "/tmp",
-                "path" : ( absolute_path("."), ),
+                "cwd" : Util::tmp_location(),
+                "path" : ( m_prefix, ),
             );
         Process p("test_cwd.q", opts);
         while (*string e = p.readStdout()) {
@@ -328,7 +391,7 @@ public class Main inherits QUnit::Test {
                 "path" : ( "/", ),
             );
         try {
-            Process p("true", opts);
+            Process p(getTestValue("pathTestNegative_exe"), opts);
             p.wait();
             assertEq(0, p.exitCode(), "process exit code");
         }
@@ -341,7 +404,7 @@ public class Main inherits QUnit::Test {
     detachTest() {
         int pid;
         {
-            Process p("sleep", 2);
+            Process p(getTestValue("detachTest_exe"), 2);
             pid = p.id();
             p.detach();
         }
@@ -357,7 +420,7 @@ public class Main inherits QUnit::Test {
     detachTestNegative() {
         int pid;
         {
-            Process p("sleep", 2);
+            Process p(getTestValue("detachTest_exe"), 2);
             pid = p.id();
         }
 
@@ -368,18 +431,13 @@ public class Main inherits QUnit::Test {
     }
 
     waitTimeoutTest() {
-        Process p("sleep", 3);
+        Process p(getTestValue("waitTimeoutTest_exe"), 3);
         while (!p.wait(1)) {
             if (VERBOSE) printf("timeout\n");
         }
+        p.wait();
         assertEq(0, p.exitCode(), "process exit code");
     }
-}
-
-string sub absolute_path(string p) {
-    Dir d();
-    d.chdir(p);
-    return d.path();
 }
 
 sub run_bg(Process p, Main m) {
