@@ -26,6 +26,7 @@ public class Main inherits QUnit::Test {
                 "simpleTest_exe" : "ls",
                 "simpleTest_arg" : ("-l" , "-s",),
                 "executorsTest_exe" : "true",
+                "executorsTest_success" : "Success",
                 "envVarsNegativeTest_exe" : "true",
                 "pathTestNegative_exe" : "true",
                 "detachTest_exe" : "sleep",
@@ -52,6 +53,7 @@ public class Main inherits QUnit::Test {
                 "simpleTest_exe" : "ls",
                 "simpleTest_arg" : ("-l" , "-s",),
                 "executorsTest_exe" : "true",
+                "executorsTest_success" : "Undefined error: 0",
                 "envVarsNegativeTest_exe" : "true",
                 "pathTestNegative_exe" : "true",
                 "detachTest_exe" : "sleep",
@@ -177,7 +179,7 @@ public class Main inherits QUnit::Test {
                     assertEq(127, e.exit, "on_success exit code check");
                     assertEq("/usr/bin/true", e.exe, "on_success exe check");
                     assertEq(0, e.error_code, "on_success error_code check");
-                    assertEq("Success", e.error_message, "on_success error_message check");
+                    assertEq(getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
                     assertEq("system", e.error_category, "on_success error_category check");
                 },
                 "on_setup" : sub (hash e) {
@@ -214,7 +216,7 @@ public class Main inherits QUnit::Test {
         assertEq(127, e.exit, "on_success exit code check");
         assertEq("/usr/bin/true", e.exe, "on_success exe check");
         assertEq(0, e.error_code, "on_success error_code check");
-        assertEq("Success", e.error_message, "on_success error_message check");
+        assertEq(getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
         assertEq("system", e.error_category, "on_success error_category check");
     }
 
@@ -224,7 +226,7 @@ public class Main inherits QUnit::Test {
         MAIN.assertEq(127, e.exit, "on_success exit code check");
         MAIN.assertEq("/usr/bin/true", e.exe, "on_success exe check");
         MAIN.assertEq(0, e.error_code, "on_success error_code check");
-        MAIN.assertEq("Success", e.error_message, "on_success error_message check");
+        MAIN.assertEq(MAIN.getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
         MAIN.assertEq("system", e.error_category, "on_success error_category check");
     }
 
@@ -235,7 +237,7 @@ public class Main inherits QUnit::Test {
         assertEq(127, e.exit, "on_success exit code check");
         assertEq("/usr/bin/true", e.exe, "on_success exe check");
         assertEq(0, e.error_code, "on_success error_code check");
-        assertEq("Success", e.error_message, "on_success error_message check");
+        assertEq(getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
         assertEq("system", e.error_category, "on_success error_category check");
     }
 
@@ -334,24 +336,27 @@ public class Main inherits QUnit::Test {
     }
 
     envVarsTest() {
-        hash opts_p = (
-                "path" : ( m_prefix, ),
-            );
-        hash cases = (
-                "test1" : ( "FOO", "bar"),
-                "test2" : ( "FOO", 1),
-            );
+        hash opts_p = ( "path" : ( m_prefix, ), );
 
-        HashIterator it(cases);
-        while (it.next()) {
-            list args = it.getValue();
-            hash opts = ("env" : (args[0] : args[1])) + opts_p;
-            Process p("test_env.q", args, opts); # no m_prefix here as we are testing "path" too
+        {
+            hash opts = ("env" : ("FOO": "bar")) + opts_p;
+            Process p("test_env.q", ("FOO", "bar"), opts);
             p.wait();
             int ret = p.exitCode();
 
-            assertEq(0, ret, sprintf("env var retval for %n: %n", it.getKey(), args));
+            assertEq(0, ret, "env var retval for passed env");
         }
+
+        # negative test
+        {
+            hash opts = opts_p;
+            Process p("test_env.q", ("FOO", "bar"), opts);
+            p.wait();
+            int ret = p.exitCode();
+
+            assertEq(3, ret, "env var retval for NOT passed env");
+        }
+
     }
 
     envVarsNegativeTest() {
@@ -460,6 +465,6 @@ sub executor_func(hash e) {
     MAIN.assertEq(127, e.exit, "on_success exit code check");
     MAIN.assertEq("/usr/bin/true", e.exe, "on_success exe check");
     MAIN.assertEq(0, e.error_code, "on_success error_code check");
-    MAIN.assertEq("Success", e.error_message, "on_success error_message check");
+    MAIN.assertEq(MAIN.getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
     MAIN.assertEq("system", e.error_category, "on_success error_category check");
 }
