@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.7.2)
 
 project(qore-process-module)
 
@@ -7,7 +7,7 @@ project(qore-process-module)
 # cd boost_1_63_0/
 # ./bootstrap.sh
 # ./b2 tools/bcp
-# ./dist/bin/bcp filesystem ~/src/qore/module-process/src/
+# ./dist/bin/bcp filesystem ~/src/qore/module-process/3rd_party
 option(USE_INTERNAL_BOOST "Enforce using internal copy of boost libraries" OFF)
 
 set (VERSION_MAJOR 0)
@@ -39,11 +39,6 @@ if(COMPILER_SUPPORTS_CXX11)
 else()
     message(FATAL_ERROR "The compiler ${CMAKE_CXX_COMPILER} has no C++11 support. Please use a different C++ compiler.")
 endif()
-
-
-include_directories( ${CMAKE_SOURCE_DIR}/src )
-include_directories( ${Boost_INCLUDE_DIRS} )
-
 
 set(CPP_SRC
     src/qoreprocesshandler.h
@@ -169,23 +164,28 @@ set(CPP_SRC
 
 if (BOOST_INTERNAL)
     set (CPP_SRC ${CPP_SRC}
-            src/libs/system/src/error_code.cpp
-            src/libs/filesystem/src/codecvt_error_category.cpp
-            src/libs/filesystem/src/operations.cpp
-            src/libs/filesystem/src/path.cpp
-            src/libs/filesystem/src/path_traits.cpp
-            src/libs/filesystem/src/portability.cpp
-            src/libs/filesystem/src/unique_path.cpp
-            src/libs/filesystem/src/utf8_codecvt_facet.cpp
-            src/libs/filesystem/src/windows_file_codecvt.cpp
-            src/libs/filesystem/src/windows_file_codecvt.hpp
+            3rd_party/libs/system/src/error_code.cpp
+            3rd_party/libs/filesystem/src/codecvt_error_category.cpp
+            3rd_party/libs/filesystem/src/operations.cpp
+            3rd_party/libs/filesystem/src/path.cpp
+            3rd_party/libs/filesystem/src/path_traits.cpp
+            3rd_party/libs/filesystem/src/portability.cpp
+            3rd_party/libs/filesystem/src/unique_path.cpp
+            3rd_party/libs/filesystem/src/utf8_codecvt_facet.cpp
+            3rd_party/libs/filesystem/src/windows_file_codecvt.cpp
+            3rd_party/libs/filesystem/src/windows_file_codecvt.hpp
         )
+    include_directories( 3rd_party )
+else (BOOST_INTERNAL)
+    include_directories( ${Boost_INCLUDE_DIRS} )
 endif (BOOST_INTERNAL)
 
 set(QPP_SRC
     src/process.qpp
     src/QC_Process.qpp
 )
+
+include_directories( ${CMAKE_SOURCE_DIR}/src )
 
 qore_wrap_qpp_value(QPP_SOURCES ${QPP_SRC})
 
