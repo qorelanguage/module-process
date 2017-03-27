@@ -18,46 +18,26 @@ public class Main inherits QUnit::Test {
         string m_prefix;
 
         hash m_test_paths = (
+            "DEFAULT" : (
+                "testTrue" : "test_true.q",
+                "testSleep" : "test_sleep.q",
+            ),
             "LINUX" : (
                 "searchPathTest_in" : "ls",
                 "searchPathTest_out" : "/usr/bin/ls",
-                "constructorTest_exe" : "true",
-                "constructorTest_arg" : 1,
                 "simpleTest_exe" : "ls",
                 "simpleTest_arg" : ("-l" , "-s",),
-                "executorsTest_exe" : "true",
                 "executorsTest_success" : "Success",
-                "envVarsNegativeTest_exe" : "true",
-                "pathTestNegative_exe" : "true",
-                "detachTest_exe" : "sleep",
-                "waitTimeoutTest_exe" : "sleep",
             ),
             "WINDOWS" : (
                 "searchPathTest_in" : "timeout",
-                "searchPathTest_out" : dirname(ENV.SHELL) + "/ls",
-                "constructorTest_exe" : "true",
-                "constructorTest_arg" : 1,
-                "simpleTest_exe" : "ls",
-                "simpleTest_arg" : ("-l" , "-s",),
-                "executorsTest_exe" : "true",
-                "envVarsNegativeTest_exe" : "true",
-                "pathTestNegative_exe" : "true",
-                "detachTest_exe" : "timeout",
-                "waitTimeoutTest_exe" : "timeout",
             ),
             "DARWIN" : (
                 "searchPathTest_in" : "ls",
                 "searchPathTest_out" : dirname(ENV.SHELL) + "/ls",
-                "constructorTest_exe" : "true",
-                "constructorTest_arg" : 1,
                 "simpleTest_exe" : "ls",
                 "simpleTest_arg" : ("-l" , "-s",),
-                "executorsTest_exe" : "true",
                 "executorsTest_success" : "Undefined error: 0",
-                "envVarsNegativeTest_exe" : "true",
-                "pathTestNegative_exe" : "true",
-                "detachTest_exe" : "sleep",
-                "waitTimeoutTest_exe" : "sleep",
             ),
         );
     }
@@ -92,17 +72,21 @@ public class Main inherits QUnit::Test {
         set_return_value(main());
     }
 
+    string prefix() {
+        return m_prefix;
+    }
+
     any getTestValue(string key) {
         string os = Qore::PlatformOS.upr();
         if (!m_test_paths.hasKey(os)) {
             throw "MISSING-TEST-SETUP", sprintf("There is no TEST_PATHS setup for OS: %s, known OSes: %n", os, m_test_paths.keys());
         }
 
-        if (!m_test_paths{os}.hasKey(key)) {
+        if (!m_test_paths.DEFAULT.hasKey(key) && !m_test_paths{os}.hasKey(key)) {
             throw "MISSING-TEST-SETUP", sprintf("There is no TEST_PATHS setup for OS: %s, test_name: %s", os, key);
         }
 
-        return m_test_paths{os}{key};
+        return m_test_paths{os}{key} ?? m_test_paths.DEFAULT{key};
     }
 
     globalSetUp() {
@@ -126,27 +110,29 @@ public class Main inherits QUnit::Test {
 
     constructorTest() {
         hash opts = (
+                "path" : ( m_prefix, ),
                 "env" : ( "FOO" : "bar" ),
             );
 
-        string exe = getTestValue("constructorTest_exe");
-        softlist args = getTestValue("constructorTest_arg");
+        string exe = getTestValue("testTrue");
+        softlist args = ( 1, );
 
-        Process p1(exe);
-        p1.wait();
-        assertEq(0, p1.exitCode(), "exit code p1");
+        try {
+            Process p1(exe);
+            p1.wait();
+            assertEq(0, p1.exitCode(), "exit code p1");
+        }
+        catch (hash ex) {
+            assertEq("PROCESS-SEARCH-PATH-ERROR", ex.err, "it should not be found");
+        }
 
-        Process p2(exe, args);
+        Process p2(exe, args, opts);
         p2.wait();
         assertEq(0, p2.exitCode(), "exit code p2");
 
         Process p3(exe, opts);
         p3.wait();
         assertEq(0, p3.exitCode(), "exit code p3");
-
-        Process p4(exe, args, opts);
-        p4.wait();
-        assertEq(0, p4.exitCode(), "exit code p4");
     }
 
     simpleTest() {
@@ -173,11 +159,12 @@ public class Main inherits QUnit::Test {
 
     executorsTest() {
         hash opts = (
+                "path" : ( m_prefix, ),
                 "on_success" : sub (hash e) {
                     if (m_options.verbose) printf("    on_success attribute: %n\n", e);
                     assertEq("on_success", e.name, "name check");
                     assertEq(127, e.exit, "on_success exit code check");
-                    assertEq("/usr/bin/true", e.exe, "on_success exe check");
+                    assertEq(m_prefix + getTestValue("testTrue"), e.exe, "on_success exe check");
                     assertEq(0, e.error_code, "on_success error_code check");
                     assertEq(getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
                     assertEq("system", e.error_category, "on_success error_category check");
@@ -204,7 +191,7 @@ public class Main inherits QUnit::Test {
                 },
             );
 
-        Process p(getTestValue("executorsTest_exe"), opts);
+        Process p(getTestValue("testTrue"), opts);
         p.wait();
         int ret = p.exitCode();
         assertEq(0, ret, "expected 0 retval");
@@ -214,7 +201,7 @@ public class Main inherits QUnit::Test {
         if (m_options.verbose) printf("executorMethod: %n\n", e);
         assertEq("on_success", e.name, "name check");
         assertEq(127, e.exit, "on_success exit code check");
-        assertEq("/usr/bin/true", e.exe, "on_success exe check");
+        assertEq(m_prefix + getTestValue("testTrue"), e.exe, "on_success exe check");
         assertEq(0, e.error_code, "on_success error_code check");
         assertEq(getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
         assertEq("system", e.error_category, "on_success error_category check");
@@ -224,7 +211,7 @@ public class Main inherits QUnit::Test {
         if (VERBOSE) printf("executorStaticMethod: %n\n", e);
         MAIN.assertEq("on_success", e.name, "name check");
         MAIN.assertEq(127, e.exit, "on_success exit code check");
-        MAIN.assertEq("/usr/bin/true", e.exe, "on_success exe check");
+        MAIN.assertEq(MAIN.prefix() + MAIN.getTestValue("testTrue"), e.exe, "on_success exe check");
         MAIN.assertEq(0, e.error_code, "on_success error_code check");
         MAIN.assertEq(MAIN.getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
         MAIN.assertEq("system", e.error_category, "on_success error_category check");
@@ -235,7 +222,7 @@ public class Main inherits QUnit::Test {
         if (m_options.verbose) printf("executorNoHash: %n\n", e);
         assertEq("on_success", e.name, "name check");
         assertEq(127, e.exit, "on_success exit code check");
-        assertEq("/usr/bin/true", e.exe, "on_success exe check");
+        assertEq(m_prefix + getTestValue("testTrue"), e.exe, "on_success exe check");
         assertEq(0, e.error_code, "on_success error_code check");
         assertEq(getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
         assertEq("system", e.error_category, "on_success error_category check");
@@ -251,7 +238,7 @@ public class Main inherits QUnit::Test {
 
         ListIterator it(opts);
         while (it.next()) {
-            Process p(getTestValue("executorsTest_exe"), it.getValue());
+            Process p(getTestValue("testTrue"), it.getValue() + ("path" : (m_prefix,)));
             p.wait();
             int ret = p.exitCode();
             assertEq(0, ret, "expected 0 retval");
@@ -261,9 +248,10 @@ public class Main inherits QUnit::Test {
     executorsNegativeTest() {
         try {
             hash opts = (
+                    "path" : ( m_prefix, ),
                     "on_success" : 1,
                 );
-            Process p(getTestValue("executorsTest_exe"), opts);
+            Process p(getTestValue("testTrue"), opts);
         }
         catch (hash ex) {
             assertEq("PROCESS-OPTIONS-ERROR", ex.err, "on_success using integer: err");
@@ -275,9 +263,10 @@ public class Main inherits QUnit::Test {
 
         try {
             hash opts = (
+                    "path" : (m_prefix, ),
                     "on_success" : sub (int i) {},
                 );
-            Process p(getTestValue("executorsTest_exe"), opts);
+            Process p(getTestValue("testTrue"), opts);
         }
         catch (hash ex) {
             assertEq("RUNTIME-TYPE-ERROR", ex.err, "on_success using code with no hash as arg: err");
@@ -361,11 +350,12 @@ public class Main inherits QUnit::Test {
 
     envVarsNegativeTest() {
         hash opts = (
+                "path" : (m_prefix,),
                 "env" : 1, # let's try something else than hash for envs
             );
 
         try {
-            Process p(getTestValue("envVarsNegativeTest_exe"), opts);
+            Process p(getTestValue("testTrue"), opts);
             p.wait();
             assertEq(True, False, "envVarsNegativeTest cannot go here");
         }
@@ -396,20 +386,20 @@ public class Main inherits QUnit::Test {
                 "path" : ( "/", ),
             );
         try {
-            Process p(getTestValue("pathTestNegative_exe"), opts);
+            Process p(getTestValue("testTrue"), opts);
             p.wait();
             assertEq(0, p.exitCode(), "process exit code");
         }
         catch (hash ex) {
             assertEq("PROCESS-SEARCH-PATH-ERROR", ex.err, "ex.err check");
-            assertEq("Command 'true' cannot be found in PATH", ex.desc, "ex.desc check");
+            assertEq("Command 'test_true.q' cannot be found in PATH", ex.desc, "ex.desc check");
         }
     }
 
     detachTest() {
         int pid;
         {
-            Process p(getTestValue("detachTest_exe"), 2);
+            Process p(getTestValue("testSleep"), 2, ("path" : (m_prefix,)));
             pid = p.id();
             p.detach();
         }
@@ -425,7 +415,7 @@ public class Main inherits QUnit::Test {
     detachTestNegative() {
         int pid;
         {
-            Process p(getTestValue("detachTest_exe"), 2);
+            Process p(getTestValue("testSleep"), 2, ("path" : (m_prefix,)));
             pid = p.id();
         }
 
@@ -436,7 +426,7 @@ public class Main inherits QUnit::Test {
     }
 
     waitTimeoutTest() {
-        Process p(getTestValue("waitTimeoutTest_exe"), 3);
+        Process p(getTestValue("testSleep"), 3, ("path" : (m_prefix,)));
         while (!p.wait(1)) {
             if (VERBOSE) printf("timeout\n");
         }
@@ -463,7 +453,7 @@ sub executor_func(hash e) {
     if (VERBOSE) printf("executor_func: %n\n", e);
     MAIN.assertEq("on_success", e.name, "name check");
     MAIN.assertEq(127, e.exit, "on_success exit code check");
-    MAIN.assertEq("/usr/bin/true", e.exe, "on_success exe check");
+    MAIN.assertEq(MAIN.prefix() + MAIN.getTestValue("testTrue"), e.exe, "on_success exe check");
     MAIN.assertEq(0, e.error_code, "on_success error_code check");
     MAIN.assertEq(MAIN.getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
     MAIN.assertEq("system", e.error_category, "on_success error_category check");
