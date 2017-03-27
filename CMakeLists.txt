@@ -187,13 +187,18 @@ set(QPP_SRC
 
 include_directories( ${CMAKE_SOURCE_DIR}/src )
 
+if (WIN32)
+    add_definitions(-DWINDOWS_API)
+    set(WIN_LIBS wsock32 ws2_32)
+endif (WIN32)
+
 qore_wrap_qpp_value(QPP_SOURCES ${QPP_SRC})
 
 SET (module_name "process")
 
 add_library(${module_name} SHARED ${CPP_SRC} ${QPP_SOURCES})
 
-qore_binary_module(${module_name} "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}" ${Boost_LIBRARIES})
+qore_binary_module(${module_name} "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}" ${Boost_LIBRARIES} ${WIN_LIBS})
 
 qore_dist("${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}")
 

@@ -1,5 +1,6 @@
 #include <iostream>
 #include <cstddef>
+#include <boost/numeric/conversion/cast.hpp>
 
 #include "processpriv.h"
 #include "qoreprocesshandler.h"
@@ -14,7 +15,8 @@ namespace ex = boost::process::extend;
 ProcessPriv::ProcessPriv(pid_t pid, ExceptionSink *xsink)
 {
     try {
-        m_process = new bp::child(pid);
+	int i = boost::numeric_cast<int>(pid);
+        m_process = new bp::child(i);
     }
     catch (const std::exception &ex) {
         xsink->raiseException("PROCESS-CONSTRUCTOR-ERROR", ex.what());

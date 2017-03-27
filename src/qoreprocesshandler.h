@@ -86,7 +86,10 @@ public:
         // TODO/FIXME: more keys: cmd_line, env, ...
         e->setKeyValue("name", new QoreStringNode(info), m_xsink);
         e->setKeyValue("exe", new QoreStringNode(exec.exe), m_xsink);
+#ifndef WINDOWS_API
+#warning "TODO/FIXME: exec.pid missing on windows"
         e->setKeyValue("pid", new QoreBigIntNode(exec.pid), m_xsink);
+#endif
         e->setKeyValue("exit", new QoreBigIntNode(*(exec.exit_status)), m_xsink);
         // std::error_code &ec to hash too
         e->setKeyValue("error_code", new QoreBigIntNode(ec.value()), m_xsink);
