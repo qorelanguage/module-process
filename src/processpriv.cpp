@@ -60,7 +60,6 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
                                   bp::args = a,
                                   bp::env = e,
                                   bp::start_dir = cwd,
-                                  // TODO/FIXME: bp::shell flag on demand from options
                                   QoreProcessHandler(xsink,
                                                      on_success,
                                                      on_setup,
@@ -69,9 +68,9 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
                                                      on_exec_setup,
                                                      on_exec_error
                                                     ),
-                                  bp::std_out > m_out, // TODO/FIXME: more options from opts
-                                  bp::std_err > m_err, // TODO/FIXME: more options from opts
-                                  bp::std_in < m_in // TODO/FIXME: more options from opts
+                                  bp::std_out > m_out,
+                                  bp::std_err > m_err,
+                                  bp::std_in < m_in
                                  );
     }
     catch (const std::exception &ex) {
