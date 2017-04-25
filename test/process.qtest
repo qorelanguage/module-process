@@ -111,7 +111,7 @@ public class Main inherits QUnit::Test {
     constructorTest() {
         hash opts = (
                 "path" : ( m_prefix, ),
-                "env" : ( "FOO" : "bar" ),
+                "env" : ( "FOO" : "bar" ) + ENV,
             );
 
         string exe = getTestValue("testTrue");
@@ -325,10 +325,13 @@ public class Main inherits QUnit::Test {
     }
 
     envVarsTest() {
-        hash opts_p = ( "path" : ( m_prefix, ), );
+        hash opts_p = ( "path" : ( m_prefix, ),
+                        "env" : ENV,
+                      );
 
         {
-            hash opts = ("env" : ("FOO": "bar")) + opts_p;
+            hash opts = opts_p;
+            opts.env += ( "FOO" : "bar" );
             Process p("test_env.q", ("FOO", "bar"), opts);
             p.wait();
             int ret = p.exitCode();
