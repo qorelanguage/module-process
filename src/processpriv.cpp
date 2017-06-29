@@ -272,7 +272,7 @@ bool ProcessPriv::wait(int64 t, ExceptionSink *xsink)
 
     try {
         if (m_process->valid() && m_process->running())
-            return m_process->wait_for(std::chrono::seconds(t));
+            return m_process->wait_for(std::chrono::milliseconds(t));
         return false;
     }
     catch (const std::exception &ex) {

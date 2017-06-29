@@ -430,7 +430,7 @@ public class Main inherits QUnit::Test {
 
     waitTimeoutTest() {
         Process p(getTestValue("testSleep"), 3, ("path" : (m_prefix,)));
-        while (!p.wait(1)) {
+        while (!p.wait(2s)) {
             if (VERBOSE) printf("timeout\n");
         }
         p.wait();
