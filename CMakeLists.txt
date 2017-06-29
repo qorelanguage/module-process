@@ -1,4 +1,5 @@
-cmake_minimum_required(VERSION 3.5.2)
+#cmake_minimum_required(VERSION 3.5.2) - this one is required to find boost libs >= 1.64, but we have to use old one for centos/rhel
+cmake_minimum_required(VERSION 2.8)
 
 project(qore-process-module)
 
