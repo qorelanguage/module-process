@@ -288,13 +288,23 @@ public class Main inherits QUnit::Test {
         Process p("test_io.q", opts);
         p.write(str);
 
+        string b1 = p.readStdout(1);
+        assertEq("t", b1, "byte 1 stdout read test");
+        string b2 = p.readStdout(2);
+        assertEq("ex", b2, "byte 2 stdout read test");
+
         int ix = 0;
         while (*string e = p.readStdout()) {
             have_stdout = True;
             string msg = sprintf("my error %d", ix);
-            assertEq(str, e, "stdout text "+ix);
+            assertEq(str.substr(3), e, "stdout text "+ix);
             ix++;
         }
+
+        b1 = p.readStderr(1);
+        assertEq("1", b1, "byte 1 stderr read test");
+        b2 = p.readStderr(2);
+        assertEq("23", b2, "byte 2 stderr read test");
 
         ix = 0;
         while (*string e = p.readStderr()) {

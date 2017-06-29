@@ -320,20 +320,36 @@ nothing Process::write(number n) {
     priv->write(s->getBuffer(), xsink);
 }
 
-//! Read from child process' standard output
+//! Read from child process' standard output - one line, up to EOL
 /** @return string with data
-    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
 string Process::readStdout() {
     return priv->readStdout();
 }
 
-//! Read from child process' standard error
+//! Read from child process' standard output - exact byte size
 /** @return string with data
-    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+    @param bytes a count of bytes to read
+    @throw PROCESS-STDOUT-READ-ERROR in case of read error
+ */
+string Process::readStdout(int bytes) {
+    return priv->readStdout(bytes, xsink);
+}
+
+//! Read from child process' standard error - one line, up to EOL
+/** @return string with data
  */
 string Process::readStderr() {
     return priv->readStderr();
+}
+
+//! Read from child process' standard output - exact byte size
+/** @return string with data
+    @param bytes a count of bytes to read
+    @throw PROCESS-STDOUT-READ-ERROR in case of read error
+ */
+string Process::readStderr(int bytes) {
+    return priv->readStderr(bytes, xsink);
 }
 
 //! Search for full path of command in current process' PATH

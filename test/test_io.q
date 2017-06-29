@@ -5,6 +5,8 @@
 string s = Qore::stdin.readLine();
 Qore::stdout.write(s);
 
+Qore::stderr.write("123");
+Qore::stderr.sync();
 Qore::stderr.write("my error 0\n");
 sleep(2s);
 Qore::stderr.write("my error 1\n");

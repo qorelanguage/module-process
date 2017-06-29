@@ -296,11 +296,39 @@ QoreStringNode* ProcessPriv::readStderr()
     return new QoreStringNode(line);
 }
 
+QoreStringNode* ProcessPriv::readStderr(std::streamsize size, ExceptionSink* xsink)
+{
+    std::string buff(size, '\0');
+
+    try {
+        m_err.read(&buff[0], size);
+    }
+    catch (const std::exception &ex) {
+        xsink->raiseException("PROCESS-STDERR-READ-ERROR", ex.what());
+    }
+
+    return new QoreStringNode(buff);
+}
+
 QoreStringNode* ProcessPriv::readStdout()
 {
     std::string line;
     std::getline(m_out, line);
     return new QoreStringNode(line);
+}
+
+QoreStringNode* ProcessPriv::readStdout(std::streamsize size, ExceptionSink* xsink)
+{
+    std::string buff(size, '\0');
+
+    try {
+        m_out.read(&buff[0], size);
+    }
+    catch (const std::exception &ex) {
+        xsink->raiseException("PROCESS-STDOUT-READ-ERROR", ex.what());
+    }
+
+    return new QoreStringNode(buff);
 }
 
 bool ProcessPriv::terminate(ExceptionSink *xsink) {

@@ -47,8 +47,10 @@ public:
     }
 
     DLLLOCAL QoreStringNode* readStderr();
+    DLLLOCAL QoreStringNode* readStderr(std::streamsize size, ExceptionSink* xsink);
 
     DLLLOCAL QoreStringNode* readStdout();
+    DLLLOCAL QoreStringNode* readStdout(std::streamsize size, ExceptionSink* xsink);
 
     static boost::filesystem::path optsPath(const char* command, const QoreHashNode *opts, ExceptionSink *xsink);
 
