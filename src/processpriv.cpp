@@ -331,6 +331,17 @@ QoreStringNode* ProcessPriv::readStdout(std::streamsize size, ExceptionSink* xsi
     return new QoreStringNode(buff);
 }
 
+void ProcessPriv::write(std::string val, ExceptionSink *xsink)
+{
+    try {
+        m_in.write(val.data(), val.size());
+        m_in.flush();
+    }
+    catch (const std::invalid_argument& e) {
+        xsink->raiseException("PROCESS-WRITE-EXCEPTION", e.what());
+    }
+}
+
 bool ProcessPriv::terminate(ExceptionSink *xsink) {
     PROCESS_CHECK(false)
 

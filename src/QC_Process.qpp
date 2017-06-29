@@ -283,7 +283,7 @@ nothing Process::write(string s) {
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
 nothing Process::write(binary b) {
-    priv->write(b->getPtr(), xsink);
+    priv->write((char*)b->getPtr(), xsink);
 }
 
 //! Write into child's \c stdin
@@ -294,7 +294,8 @@ nothing Process::write(binary b) {
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
 nothing Process::write(int i) {
-    priv->write(i, xsink);
+    QoreStringNodeValueHelper s(i);
+    priv->write(s->getBuffer(), xsink);
 }
 
 //! Write into child's \c stdin
@@ -305,7 +306,8 @@ nothing Process::write(int i) {
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
 nothing Process::write(float f) {
-    priv->write(f, xsink);
+    QoreStringNodeValueHelper s(f);
+    priv->write(s->getBuffer(), xsink);
 }
 
 //! Write into child's \c stdin

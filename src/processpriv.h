@@ -35,16 +35,7 @@ public:
 
     DLLLOCAL bool terminate(ExceptionSink *xsink);
 
-    template<typename T>
-    DLLLOCAL void write(T val, ExceptionSink *xsink)
-    {
-        try {
-            m_in << val << std::endl;
-        }
-        catch (const std::invalid_argument& e) {
-            xsink->raiseException("PROCESS-WRITE-EXCEPTION", e.what());
-        }
-    }
+    DLLLOCAL void write(std::string val, ExceptionSink *xsink);
 
     DLLLOCAL QoreStringNode* readStderr();
     DLLLOCAL QoreStringNode* readStderr(std::streamsize size, ExceptionSink* xsink);

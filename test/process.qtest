@@ -286,7 +286,7 @@ public class Main inherits QUnit::Test {
                 "path" : ( m_prefix, ),
             );
         Process p("test_io.q", opts);
-        p.write(str);
+        p.write(str + "\n"); # \n is mandatory for test_io.q buffered read
 
         string b1 = p.readStdout(1);
         assertEq("t", b1, "byte 1 stdout read test");
