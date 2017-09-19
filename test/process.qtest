@@ -225,9 +225,9 @@ public class Main inherits QUnit::Test {
         bool have_stderr = False;
 
         hash opts = (
-                "path" : ( absolute_path("."), ),
+                "path" : ( absolute_path(get_script_dir()), ),
             );
-        Process p("test_io.q", opts);
+        Process p("/test_io.q", opts);
         p.write(str);
 
         int ix = 0;
@@ -282,7 +282,7 @@ public class Main inherits QUnit::Test {
         ListIterator it(cases);
         while (it.next()) {
             hash a = it.getValue();
-            Process p("test_env.q", a.args, a.opts);
+            Process p(get_script_dir() + "/test_env.q", a.args, a.opts);
             p.wait();
             int ret = p.exitCode();
 
@@ -315,7 +315,7 @@ public class Main inherits QUnit::Test {
                 "cwd" : "/tmp",
                 "path" : ( absolute_path("."), ),
             );
-        Process p("test_cwd.q", opts);
+        Process p(get_script_dir() + "/test_cwd.q", opts);
         while (*string e = p.readStdout()) {
             assertEq(opts.cwd, e, "cwd value read from stdout");
         }
