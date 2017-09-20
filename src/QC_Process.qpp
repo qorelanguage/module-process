@@ -31,8 +31,8 @@
     executables. A shell will do this automatically, while this
     library provides a function for that.
 
-    The child process will be destroeyd immediatelly when an instance of
-    Process class is destructed, except you call \c detach().
+    The child process will be destroyed immediatelly when an instance of
+    Process class is destroyed, except if @ref detach() is called.
 
     The simplest usage of Process is:
 
