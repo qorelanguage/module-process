@@ -331,11 +331,11 @@ string Process::readStdout() {
 
 //! Read from child process' standard output - exact byte size
 /** @return string with data
-    @param bytes a count of bytes to read
-    @throw PROCESS-STDOUT-READ-ERROR in case of read error
+    @param bytes a count of bytes to read; if the value is negative, then a single line is read
+    @throw PROCESS-READ-ERROR in case of read error
  */
 string Process::readStdout(int bytes) {
-    return priv->readStdout(bytes, xsink);
+    return bytes < 0 ? priv->readStdout() : priv->readStdout(bytes, xsink);
 }
 
 //! Read from child process' standard error - one line, up to EOL
@@ -347,11 +347,11 @@ string Process::readStderr() {
 
 //! Read from child process' standard output - exact byte size
 /** @return string with data
-    @param bytes a count of bytes to read
-    @throw PROCESS-STDOUT-READ-ERROR in case of read error
+    @param bytes a count of bytes to read; if the value is negative, then a single line is read
+    @throw PROCESS-READ-ERROR in case of read error
  */
 string Process::readStderr(int bytes) {
-    return priv->readStderr(bytes, xsink);
+    return bytes < 0 ? priv->readStderr() : priv->readStderr(bytes, xsink);
 }
 
 //! Search for full path of command in current process' PATH

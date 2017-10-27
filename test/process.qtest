@@ -294,7 +294,7 @@ public class Main inherits QUnit::Test {
         assertEq("ex", b2, "byte 2 stdout read test");
 
         int ix = 0;
-        while (*string e = p.readStdout()) {
+        while (string e = p.readStdout(-1)) {
             have_stdout = True;
             string msg = sprintf("my error %d", ix);
             assertEq(str.substr(3), e, "stdout text "+ix);
@@ -307,7 +307,7 @@ public class Main inherits QUnit::Test {
         assertEq("23", b2, "byte 2 stderr read test");
 
         ix = 0;
-        while (*string e = p.readStderr()) {
+        while (string e = p.readStderr()) {
             have_stderr = True;
             string msg = sprintf("my error %d", ix);
             assertEq(msg, e, "stderr text "+ix);
