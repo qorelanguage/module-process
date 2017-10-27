@@ -8,7 +8,7 @@
     @tableofcontents
 
     @section processintro Process Module Introduction
-    
+
 The %process module is a Qore wrapper around <a href="http://www.boost.org/doc/libs/release/libs/process/">Boost.Process</a> by Klemens David Morgenstern.
 
 Primary class provided by this module:
@@ -32,6 +32,9 @@ Boost parts in src/boost are distributed underthe Boost Software License,
 Version 1.0. (See accompanying file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 
     @section process_relnotes Process Module Release History
+
+    @subsection process_v0_0_2 process v0.0.2
+    - fixed error handling @ref Process::Process::readStdout() "Process::readStdout()" and @ref Process::Process::readStderr() "Process::readStderr()" with negative arguments (<a href="https://github.com/qorelanguage/qore/issues/2333">issue 2333</a>)
 
     @subsection process_v0_0_1 process v0.0.1
     - initial release of the process module

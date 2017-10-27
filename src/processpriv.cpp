@@ -304,7 +304,7 @@ QoreStringNode* ProcessPriv::readStderr(std::streamsize size, ExceptionSink* xsi
         m_err.read(&buff[0], size);
     }
     catch (const std::exception &ex) {
-        xsink->raiseException("PROCESS-STDERR-READ-ERROR", ex.what());
+        xsink->raiseException("PROCESS-READ-ERROR", ex.what());
     }
 
     return new QoreStringNode(buff);
@@ -325,7 +325,7 @@ QoreStringNode* ProcessPriv::readStdout(std::streamsize size, ExceptionSink* xsi
         m_out.read(&buff[0], size);
     }
     catch (const std::exception &ex) {
-        xsink->raiseException("PROCESS-STDOUT-READ-ERROR", ex.what());
+        xsink->raiseException("PROCESS-READ-ERROR", ex.what());
     }
 
     return new QoreStringNode(buff);
