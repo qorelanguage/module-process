@@ -307,7 +307,8 @@ QoreStringNode* ProcessPriv::readStderr(std::streamsize size, ExceptionSink* xsi
         xsink->raiseException("PROCESS-READ-ERROR", ex.what());
     }
 
-    return new QoreStringNode(buff);
+    // we must let Qore calculate the string's length; the std::string object thinks it's "size" bytes long
+    return new QoreStringNode(buff.c_str());
 }
 
 QoreStringNode* ProcessPriv::readStdout()
@@ -328,7 +329,8 @@ QoreStringNode* ProcessPriv::readStdout(std::streamsize size, ExceptionSink* xsi
         xsink->raiseException("PROCESS-READ-ERROR", ex.what());
     }
 
-    return new QoreStringNode(buff);
+    // we must let Qore calculate the string's length; the std::string object thinks it's "size" bytes long
+    return new QoreStringNode(buff.c_str());
 }
 
 void ProcessPriv::write(std::string val, ExceptionSink *xsink)
