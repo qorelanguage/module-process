@@ -110,7 +110,7 @@ public class Main inherits QUnit::Test {
     }
 
     absoluteTest() {
-        string path = get_script_dir() + DirSep + "test_true.q";
+        string path = normalize_dir(get_script_dir() + DirSep + "test_true.q");
         Process proc(path);
         proc.wait();
         assertEq(0, proc.exitCode());
