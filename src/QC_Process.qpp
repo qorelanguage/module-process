@@ -48,7 +48,7 @@ p.wait();
 
     The \c opts hash can hold following keys. All keys are optional.
 
-    - \c env : replace current process' ENV with a hash of env variables.
+    - \c env : replace current process's ENV with a hash of env variables.
                Use @code ENV + ( "FOO" : "bar") @endcode is you want to merge parent's ENV to child.
     - \c cwd : a string with initial "current working directory",
                a dir which child should take as its initial work dir
@@ -106,17 +106,16 @@ qclass Process [dom=PROCESS; arg=ProcessPriv* priv; ns=Qore::Process];
 
 
 //! Construct the child from a pid.
-/** There is no guarantee that this will work. The process need the right
-    access rights, which are very platform specific.
+/** @param id the PID of the process.
 
-    The process with that PID must exist before.
+    @note The only functionality available when this constructor is used is id(); all other calls will fail
  */
 Process::constructor(int pid) {
     self->setPrivate(CID_PROCESS, new ProcessPriv(pid, xsink));
 }
 
 //! Construct a child from given arguments and launch it.
-/** @param command a string with program to be run
+/** @param command a string with program to be run; can be either an absolute path or a simple command to be found in the search path
 
     @throw PROCESS-CONSTRUCTOR-ERROR in case of error. Exception \c desc contains the additional information
     @throw PROCESS-SEARCH-PATH-ERROR in case when the \c command is not found in given PATH
@@ -126,7 +125,7 @@ Process::constructor(string command) {
 }
 
 //! Construct a child from given arguments and launch it.
-/** @param command a string with program to be run
+/** @param command a string with program to be run; can be either an absolute path or a simple command to be found in the search path
     @param opts a hash with additional options for the child process @ref process_options
 
     @throw PROCESS-CONSTRUCTOR-ERROR in case of error. Exception \c desc contains the additional information
@@ -138,7 +137,7 @@ Process::constructor(string command, hash opts) {
 }
 
 //! Construct a child from given arguments and launch it.
-/** @param command a string with program to be run
+/** @param command a string with program to be run; can be either an absolute path or a simple command to be found in the search path
     @param arguments a list with additiona \c command arguments
 
     @throw PROCESS-CONSTRUCTOR-ERROR in case of error. Exception \c desc contains the additional information
@@ -149,7 +148,7 @@ Process::constructor(string command, softlist arguments) {
 }
 
 //! Construct a child from given arguments and launch it.
-/** @param command a string with program to be run
+/** @param command a string with program to be run; can be either an absolute path or a simple command to be found in the search path
     @param arguments a list with additiona \c command arguments
     @param opts a hash with additional options for the child process. See @ref process_options
 
@@ -169,7 +168,7 @@ Process::copy() {
    xsink->raiseException("PROCESS-COPY-ERROR", "copying Proces objects is currently not supported");
 }
 
-//! Get the child process' exit code.
+//! Get the child process's exit code.
 /** The return value is without any meaning if the child wasn't waited for or if it was terminated.
 
     @return int an exit code
@@ -322,14 +321,14 @@ nothing Process::write(number n) {
     priv->write(s->getBuffer(), xsink);
 }
 
-//! Read from child process' standard output - one line, up to EOL
+//! Read from child process's standard output - one line, up to EOL
 /** @return string with data
  */
 string Process::readStdout() {
     return priv->readStdout();
 }
 
-//! Read from child process' standard output - exact byte size
+//! Read from child process's standard output - exact byte size
 /** @return string with data
     @param bytes a count of bytes to read; if the value is negative, then a single line is read
     @throw PROCESS-READ-ERROR in case of read error
@@ -338,14 +337,14 @@ string Process::readStdout(int bytes) {
     return bytes < 0 ? priv->readStdout() : priv->readStdout(bytes, xsink);
 }
 
-//! Read from child process' standard error - one line, up to EOL
+//! Read from child process's standard error - one line, up to EOL
 /** @return string with data
  */
 string Process::readStderr() {
     return priv->readStderr();
 }
 
-//! Read from child process' standard output - exact byte size
+//! Read from child process's standard output - exact byte size
 /** @return string with data
     @param bytes a count of bytes to read; if the value is negative, then a single line is read
     @throw PROCESS-READ-ERROR in case of read error
@@ -354,7 +353,7 @@ string Process::readStderr(int bytes) {
     return bytes < 0 ? priv->readStderr() : priv->readStderr(bytes, xsink);
 }
 
-//! Search for full path of command in current process' PATH
+//! Search for full path of command in current process's PATH
 /** @param command a string with command name
 
     @return string with full path of the \c command
@@ -365,7 +364,7 @@ static *string Process::searchPath(string command) {
     return new QoreStringNode(ProcessPriv::optsPath(command->getBuffer(), 0, xsink).string());
 }
 
-//! Search for full path of command in current process' PATH
+//! Search for full path of command in current process's PATH
 /** @param command a string with command name
     @param opts a hash with process options. @ref process_options - \c path is important here
 

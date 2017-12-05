@@ -194,6 +194,12 @@ boost::filesystem::path ProcessPriv::optsPath(const char* command, const QoreHas
     }
 
     if (ret.empty()) {
+        // issue #2524 if the command is already absolute, then use it
+        ret = command;
+        if (ret.is_absolute())
+            return ret;
+
+        ret.clear();
         xsink->raiseException("PROCESS-SEARCH-PATH-ERROR", "Command '%s' cannot be found in PATH", command);
     }
     return boost::filesystem::absolute(ret);

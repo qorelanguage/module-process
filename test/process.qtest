@@ -67,6 +67,7 @@ public class Main inherits QUnit::Test {
         addTestCase("detach test", \detachTest());
         addTestCase("detach test negative", \detachTestNegative());
         addTestCase("wait timeout", \waitTimeoutTest());
+        addTestCase("absolute test", \absoluteTest());
 
         # Return for compatibility with test harness that checks return value.
         set_return_value(main());
@@ -106,6 +107,21 @@ public class Main inherits QUnit::Test {
         catch (hash ex) {
             assertEq("PROCESS-SEARCH-PATH-ERROR", ex.err, "some-not-existing-exec for searchPath");
         }
+    }
+
+    absoluteTest() {
+        string path = normalize_dir(get_script_dir() + DirSep + "test_true.q");
+        Process proc(path);
+        proc.wait();
+        assertEq(0, proc.exitCode());
+
+        # negative tests
+        path = "abc" + DirSep + "test_true.q";
+        assertThrows("PROCESS-SEARCH-PATH-ERROR", sub () { proc = new Process(path, ("path": ())); });
+        path = "test_true.q";
+        assertThrows("PROCESS-SEARCH-PATH-ERROR", sub () { proc = new Process(path); });
+        path = DirSep + "test_true.q";
+        assertThrows("PROCESS-CONSTRUCTOR-ERROR", sub () { proc = new Process(path, ("path": ())); });
     }
 
     constructorTest() {
