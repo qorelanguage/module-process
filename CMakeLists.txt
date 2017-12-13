@@ -199,6 +199,10 @@ SET (module_name "process")
 
 add_library(${module_name} SHARED ${CPP_SRC} ${QPP_SOURCES})
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    target_link_libraries(${module_name} proc)
+endif()
+
 qore_binary_module(${module_name} "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}" ${Boost_LIBRARIES} ${WIN_LIBS})
 
 qore_dist("${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}")

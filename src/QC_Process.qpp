@@ -375,3 +375,18 @@ static *string Process::searchPath(string command) {
 static *string Process::searchPath(string command, hash opts) {
     return new QoreStringNode(ProcessPriv::optsPath(command->getBuffer(), opts, xsink).string());
 }
+
+//! Returns process information for the current process
+/** @return a hash of memory info
+*/
+static hash Process::getMemoryInfo() {
+    return ProcessPriv::getMemoryInfo(getpid(), xsink);
+}
+//! Returns process information
+/** @param pid the PID of the process
+
+    @return a hash of memory info
+*/
+static hash Process::getMemoryInfo(int pid) {
+    return ProcessPriv::getMemoryInfo(pid, xsink);
+}
