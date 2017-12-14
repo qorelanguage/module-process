@@ -10,6 +10,8 @@
 #define HAVE_PROCESS_CHECKPID 0
 #endif
 
+DLLLOCAL extern const TypedHashDecl* hashdeclMemorySummaryInfo;
+
 /** @defgroup process_constants Process Constants
     Constants related to process module functionality
  */
@@ -20,6 +22,18 @@ const HAVE_PROCESS_GETMEMORYINFO = bool(HAVE_PROCESS_GETMEMORYINFO);
 //! defines if the @ref Qore::Process::Process::checkPid() "Process::checkPid()" method is available on the current platform
 const HAVE_PROCESS_CHECKPID = bool(HAVE_PROCESS_CHECKPID);
 //@}
+
+//! A hash of summary memory information as provided by @ref Qore::Process::Process::getMemoryInfo() "Process::getMemoryInfo()"
+/**
+*/
+hashdecl Qore::Process::MemorySummaryInfo {
+    //! the virtual size of the process in bytes including all shared/dynamic libraries, code, and data
+    int vsz;
+    //! the resident size of the process in bytes (RAM in use)
+    int rss;
+    //! the private memory size of the process; meaning heap and stack size, without any code or shared/dynamic libraries included; this gives a measure of how much memory the process itself is using
+    int priv;
+}
 
 //! System process wrapper.
 /** A process is an independently executable entity, which is different
@@ -375,10 +389,7 @@ string Process::readStderr(int bytes) {
 }
 
 //! Returns process information for the process managed by the current object
-/** @return a hash of memory info with the following keys:
-    - \c vsz: the virtual size of the process in bytes including all shared/dynamic libraries, code, and data
-    - \c rss: the resident size of the process in bytes (RAM in use)
-    - \c priv: the private memory size of the process; meaning heap and stack size, without any code or shared/dynamic libraries included; this gives a measure of how much memory the process itself is using
+/** @return a @ref MemorySummaryInfo hash of memory info
 
     @throw PROCESS-GETMEMORYINFO-ERROR an error occurred quering the process's memory usage (PID does not exist or no permission to read the process's virtual memory tables)
     @throw PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
@@ -390,7 +401,7 @@ string Process::readStderr(int bytes) {
 
     @see HAVE_PROCESS_GETMEMORYINFO
 */
-hash Process::getMemoryInfo() {
+hash<MemorySummaryInfo> Process::getMemoryInfo() {
     int pid = priv->id(xsink);
     if (*xsink)
         return QoreValue();
@@ -421,10 +432,7 @@ static *string Process::searchPath(string command, hash opts) {
 }
 
 //! Returns process information for the current process
-/** @return a hash of memory info with the following keys:
-    - \c vsz: the virtual size of the process in bytes including all shared/dynamic libraries, code, and data
-    - \c rss: the resident size of the process in bytes (RAM in use)
-    - \c priv: the private memory size of the process; meaning heap and stack size, without any code or shared/dynamic libraries included; this gives a measure of how much memory the process itself is using
+/** @return a @ref MemorySummaryInfo hash of memory info
 
     @throw PROCESS-GETMEMORYINFO-ERROR an error occurred quering the process's memory usage (PID does not exist or no permission to read the process's virtual memory tables)
     @throw PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
@@ -435,17 +443,14 @@ static *string Process::searchPath(string command, hash opts) {
 
     @see HAVE_PROCESS_GETMEMORYINFO
 */
-static hash Process::getMemoryInfo() {
+static hash<MemorySummaryInfo> Process::getMemoryInfo() {
     return ProcessPriv::getMemoryInfo(getpid(), xsink);
 }
 
 //! Returns process information for the given PID
 /** @param pid the PID of the process
 
-    @return a hash of memory info with the following keys:
-    - \c vsz: the virtual size of the process in bytes including all shared/dynamic libraries, code, and data
-    - \c rss: the resident size of the process in bytes (RAM in use)
-    - \c priv: the private memory size of the process; meaning heap and stack size, without any code or shared/dynamic libraries included; this gives a measure of how much memory the process itself is using
+    @return a @ref MemorySummaryInfo hash of memory info
 
     @throw PROCESS-GETMEMORYINFO-ERROR an error occurred quering the process's memory usage (PID does not exist or no permission to read the process's virtual memory tables)
     @throw PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
@@ -456,7 +461,7 @@ static hash Process::getMemoryInfo() {
 
     @see HAVE_PROCESS_GETMEMORYINFO
 */
-static hash Process::getMemoryInfo(int pid) {
+static hash<MemorySummaryInfo> Process::getMemoryInfo(int pid) {
     return ProcessPriv::getMemoryInfo(pid, xsink);
 }
 

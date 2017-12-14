@@ -9,6 +9,7 @@
 namespace bp = boost::process;
 namespace ex = boost::process::extend;
 
+DLLLOCAL extern const TypedHashDecl* hashdeclMemorySummaryInfo;
 
 #define PROCESS_CHECK(RET) if (!m_process) { xsink->raiseException("PROCESS-CHECK-ERROR", "Process is not initialized"); return (RET); }
 
@@ -380,7 +381,7 @@ QoreHashNode* ProcessPriv::getMemoryInfoLinux(int pid, ExceptionSink* xsink) {
         }
     }
 
-    ReferenceHolder<QoreHashNode> rv(new QoreHashNode, xsink);
+    ReferenceHolder<QoreHashNode> rv(new QoreHashNode(hashdeclMemorySummaryInfo, xsink), xsink);
 
     int64 priv_size = 0;
 
@@ -468,7 +469,7 @@ QoreHashNode* ProcessPriv::getMemoryInfoDarwin(int pid, ExceptionSink* xsink) {
 
     //printd(5, "proc_pidinfo() rc %d vsz: " QLLD " rss: " QLLD "\n", rc, taskinfo.pti_virtual_size, taskinfo.pti_resident_size);
 
-    ReferenceHolder<QoreHashNode> rv(new QoreHashNode, xsink);
+    ReferenceHolder<QoreHashNode> rv(new QoreHashNode(hashdeclMemorySummaryInfo, xsink), xsink);
 
     rv->setKeyValue("vsz", new QoreBigIntNode(taskinfo.pti_virtual_size), xsink);
     rv->setKeyValue("rss", new QoreBigIntNode(taskinfo.pti_resident_size), xsink);

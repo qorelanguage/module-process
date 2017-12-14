@@ -42,11 +42,16 @@ Version 1.0. (See accompanying file LICENSE_1_0.txt or copy at http://www.boost.
 
 static QoreNamespace ProcessNS("Process");
 
+DLLLOCAL const TypedHashDecl* hashdeclMemorySummaryInfo;
 
-QoreClass* initProcessClass(QoreNamespace& ns);
 
+DLLLOCAL QoreClass* initProcessClass(QoreNamespace& ns);
+
+DLLLOCAL TypedHashDecl* init_hashdecl_MemorySummaryInfo(QoreNamespace& ns);
 
 QoreStringNode * process_module_init() {
+    hashdeclMemorySummaryInfo = init_hashdecl_MemorySummaryInfo(ProcessNS);
+
     ProcessNS.addSystemClass(initProcessClass(ProcessNS));
 
     return 0;
