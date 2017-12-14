@@ -49,6 +49,8 @@ public:
 
     DLLLOCAL static QoreHashNode* getMemoryInfo(int pid, ExceptionSink* xsink);
 
+    DLLLOCAL static bool checkPid(int pid, ExceptionSink* xsink);
+
 private:
     bp::child *m_process;
     bp::opstream m_in;
@@ -59,6 +61,13 @@ private:
 
     bp::environment optsEnv(const QoreHashNode *opts, ExceptionSink *xsink);
     const char* optsCwd(const QoreHashNode *opts, ExceptionSink *xsink);
+
+#ifdef __linux__
+    DLLLOCAL static QoreHashNode* getMemoryInfoLinux(int pid, ExceptionSink* xsink);
+#endif
+#if defined(__APPLE__) && defined(__MACH__)
+    DLLLOCAL static QoreHashNode* getMemoryInfoDarwin(int pid, ExceptionSink* xsink);
+#endif
 };
 
 #endif

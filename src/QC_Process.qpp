@@ -2,6 +2,25 @@
 
 #include "processpriv.h"
 
+#if defined(__linux__) || (defined(__APPLE__) && defined(__MACH__))
+#define HAVE_PROCESS_GETMEMORYINFO 1
+#define HAVE_PROCESS_CHECKPID 1
+#else
+#define HAVE_PROCESS_GETMEMORYINFO 0
+#define HAVE_PROCESS_CHECKPID 0
+#endif
+
+/** @defgroup process_constants Process Constants
+    Constants related to process module functionality
+ */
+//@{
+//! defines if the @ref Qore::Process::Process::getMemoryInfo() "Process::getMemoryInfo()" methods are available on the current platform
+const HAVE_PROCESS_GETMEMORYINFO = bool(HAVE_PROCESS_GETMEMORYINFO);
+
+//! defines if the @ref Qore::Process::Process::checkPid() "Process::checkPid()" method is available on the current platform
+const HAVE_PROCESS_CHECKPID = bool(HAVE_PROCESS_CHECKPID);
+//@}
+
 //! System process wrapper.
 /** A process is an independently executable entity, which is different
     from a thread, in that it has it's own resources. Those include
@@ -203,7 +222,9 @@ bool Process::valid() {
 /** @return bool True if the child is running
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
- */
+
+    @see @ref Process::checkPid()
+*/
 bool Process::running() {
     return priv->running(xsink);
 }
@@ -353,6 +374,29 @@ string Process::readStderr(int bytes) {
     return bytes < 0 ? priv->readStderr() : priv->readStderr(bytes, xsink);
 }
 
+//! Returns process information for the process managed by the current object
+/** @return a hash of memory info with the following keys:
+    - \c vsz: the virtual size of the process in bytes including all shared/dynamic libraries, code, and data
+    - \c rss: the resident size of the process in bytes (RAM in use)
+    - \c priv: the private memory size of the process; meaning heap and stack size, without any code or shared/dynamic libraries included; this gives a measure of how much memory the process itself is using
+
+    @throw PROCESS-GETMEMORYINFO-ERROR an error occurred quering the process's memory usage (PID does not exist or no permission to read the process's virtual memory tables)
+    @throw PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+
+    @note
+    - this method has been implemented for Linux and MacOS only; on all other platforms a \c PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR exception is thrown
+    - on MacOS the memory of another process cannot be read unless the calling process has root privileges or the process has the \c "com.apple.system-task-ports" entitlement
+
+    @see HAVE_PROCESS_GETMEMORYINFO
+*/
+hash Process::getMemoryInfo() {
+    int pid = priv->id(xsink);
+    if (*xsink)
+        return QoreValue();
+    return ProcessPriv::getMemoryInfo(pid, xsink);
+}
+
 //! Search for full path of command in current process's PATH
 /** @param command a string with command name
 
@@ -377,16 +421,57 @@ static *string Process::searchPath(string command, hash opts) {
 }
 
 //! Returns process information for the current process
-/** @return a hash of memory info
+/** @return a hash of memory info with the following keys:
+    - \c vsz: the virtual size of the process in bytes including all shared/dynamic libraries, code, and data
+    - \c rss: the resident size of the process in bytes (RAM in use)
+    - \c priv: the private memory size of the process; meaning heap and stack size, without any code or shared/dynamic libraries included; this gives a measure of how much memory the process itself is using
+
+    @throw PROCESS-GETMEMORYINFO-ERROR an error occurred quering the process's memory usage (PID does not exist or no permission to read the process's virtual memory tables)
+    @throw PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
+
+    @note
+    - this method has been implemented for Linux and MacOS only; on all other platforms a \c PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR exception is thrown
+    - on MacOS the memory of another process cannot be read unless the calling process has root privileges or the process has the \c "com.apple.system-task-ports" entitlement
+
+    @see HAVE_PROCESS_GETMEMORYINFO
 */
 static hash Process::getMemoryInfo() {
     return ProcessPriv::getMemoryInfo(getpid(), xsink);
 }
-//! Returns process information
+
+//! Returns process information for the given PID
 /** @param pid the PID of the process
 
-    @return a hash of memory info
+    @return a hash of memory info with the following keys:
+    - \c vsz: the virtual size of the process in bytes including all shared/dynamic libraries, code, and data
+    - \c rss: the resident size of the process in bytes (RAM in use)
+    - \c priv: the private memory size of the process; meaning heap and stack size, without any code or shared/dynamic libraries included; this gives a measure of how much memory the process itself is using
+
+    @throw PROCESS-GETMEMORYINFO-ERROR an error occurred quering the process's memory usage (PID does not exist or no permission to read the process's virtual memory tables)
+    @throw PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
+
+    @note
+    - this method has been implemented for Linux and MacOS only; on all other platforms a \c PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR exception is thrown
+    - on MacOS the memory of another process cannot be read unless the calling process has root privileges or the process has the \c "com.apple.system-task-ports" entitlement
+
+    @see HAVE_PROCESS_GETMEMORYINFO
 */
 static hash Process::getMemoryInfo(int pid) {
     return ProcessPriv::getMemoryInfo(pid, xsink);
+}
+
+//! Returns @ref Qore::True "True" if the process is running, @ref Qore::False "False" if not
+/** @param pid the PID of the process
+
+    @return @ref Qore::True "True" if the process is running, @ref Qore::False "False" if not
+
+    @note
+    - this method has been implemented for Unix and Unix-like system only; on all other platforms a \c PROCESS-CHECKPID-UNSUPPORTED-ERROR exception is thrown
+
+    @see
+    - @ref HAVE_PROCESS_CHECKPID
+    - @ref Process::running()
+*/
+static bool Process::checkPid(int pid) {
+    return ProcessPriv::checkPid(pid, xsink);
 }
