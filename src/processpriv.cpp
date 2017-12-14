@@ -370,7 +370,7 @@ bool ProcessPriv::terminate(ExceptionSink *xsink) {
 #include <string.h>
 #include <inttypes.h>
 
-QoreHashNode* ProcessPriv::getMemoryInfoLinux(int pid, ExceptionSink* xsink) {
+QoreHashNode* ProcessPriv::getMemorySummaryInfoLinux(int pid, ExceptionSink* xsink) {
     // open memory map for file
     QoreFile f;
     {
@@ -457,7 +457,7 @@ QoreHashNode* ProcessPriv::getMemoryInfoLinux(int pid, ExceptionSink* xsink) {
 #include <mach/vm_region.h>
 #include <mach/vm_page_size.h>
 
-QoreHashNode* ProcessPriv::getMemoryInfoDarwin(int pid, ExceptionSink* xsink) {
+QoreHashNode* ProcessPriv::getMemorySummaryInfoDarwin(int pid, ExceptionSink* xsink) {
     // we use proc_taskinfo() to get VSZ and RSS, but only PRIV is interesting for us
     struct proc_taskinfo taskinfo;
 
@@ -543,11 +543,11 @@ QoreHashNode* ProcessPriv::getMemoryInfoDarwin(int pid, ExceptionSink* xsink) {
 }
 #endif
 
-QoreHashNode* ProcessPriv::getMemoryInfo(int pid, ExceptionSink* xsink) {
+QoreHashNode* ProcessPriv::getMemorySummaryInfo(int pid, ExceptionSink* xsink) {
 #ifdef __linux__
-    return getMemoryInfoLinux(pid, xsink);
+    return getMemorySummaryInfoLinux(pid, xsink);
 #elif defined(__APPLE__) && defined(__MACH__)
-    return getMemoryInfoDarwin(pid, xsink);
+    return getMemorySummaryInfoDarwin(pid, xsink);
 #else
     xsink->raiseException("PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR", "this call is not supported on this platform");
     return nullptr;

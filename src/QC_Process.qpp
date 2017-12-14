@@ -16,14 +16,14 @@ DLLLOCAL extern const TypedHashDecl* hashdeclMemorySummaryInfo;
     Constants related to process module functionality
  */
 //@{
-//! defines if the @ref Qore::Process::Process::getMemoryInfo() "Process::getMemoryInfo()" methods are available on the current platform
+//! defines if the @ref Qore::Process::Process::getMemorySummaryInfo() "Process::getMemorySummaryInfo()" methods are available on the current platform
 const HAVE_PROCESS_GETMEMORYINFO = bool(HAVE_PROCESS_GETMEMORYINFO);
 
 //! defines if the @ref Qore::Process::Process::checkPid() "Process::checkPid()" method is available on the current platform
 const HAVE_PROCESS_CHECKPID = bool(HAVE_PROCESS_CHECKPID);
 //@}
 
-//! A hash of summary memory information as provided by @ref Qore::Process::Process::getMemoryInfo() "Process::getMemoryInfo()"
+//! A hash of summary memory information as provided by @ref Qore::Process::Process::getMemorySummaryInfo() "Process::getMemorySummaryInfo()"
 /**
 */
 hashdecl Qore::Process::MemorySummaryInfo {
@@ -401,11 +401,11 @@ string Process::readStderr(int bytes) {
 
     @see HAVE_PROCESS_GETMEMORYINFO
 */
-hash<MemorySummaryInfo> Process::getMemoryInfo() {
+hash<MemorySummaryInfo> Process::getMemorySummaryInfo() {
     int pid = priv->id(xsink);
     if (*xsink)
         return QoreValue();
-    return ProcessPriv::getMemoryInfo(pid, xsink);
+    return ProcessPriv::getMemorySummaryInfo(pid, xsink);
 }
 
 //! Search for full path of command in current process's PATH
@@ -443,8 +443,8 @@ static *string Process::searchPath(string command, hash opts) {
 
     @see HAVE_PROCESS_GETMEMORYINFO
 */
-static hash<MemorySummaryInfo> Process::getMemoryInfo() {
-    return ProcessPriv::getMemoryInfo(getpid(), xsink);
+static hash<MemorySummaryInfo> Process::getMemorySummaryInfo() {
+    return ProcessPriv::getMemorySummaryInfo(getpid(), xsink);
 }
 
 //! Returns process information for the given PID
@@ -461,8 +461,8 @@ static hash<MemorySummaryInfo> Process::getMemoryInfo() {
 
     @see HAVE_PROCESS_GETMEMORYINFO
 */
-static hash<MemorySummaryInfo> Process::getMemoryInfo(int pid) {
-    return ProcessPriv::getMemoryInfo(pid, xsink);
+static hash<MemorySummaryInfo> Process::getMemorySummaryInfo(int pid) {
+    return ProcessPriv::getMemorySummaryInfo(pid, xsink);
 }
 
 //! Returns @ref Qore::True "True" if the process is running, @ref Qore::False "False" if not

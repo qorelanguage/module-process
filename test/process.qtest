@@ -466,7 +466,7 @@ public class Main inherits QUnit::Test {
 
     memoryAndCheckPidTest() {
         if (HAVE_PROCESS_GETMEMORYINFO) {
-            hash<auto> h = Process::getMemoryInfo();
+            hash<auto> h = Process::getMemorySummaryInfo();
             assertGt(0, h.vsz);
             assertGt(0, h.rss);
             assertGt(0, h.priv);

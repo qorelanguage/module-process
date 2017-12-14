@@ -47,7 +47,7 @@ public:
 
     DLLLOCAL static boost::filesystem::path optsPath(const char* command, const QoreHashNode *opts, ExceptionSink *xsink);
 
-    DLLLOCAL static QoreHashNode* getMemoryInfo(int pid, ExceptionSink* xsink);
+    DLLLOCAL static QoreHashNode* getMemorySummaryInfo(int pid, ExceptionSink* xsink);
 
     DLLLOCAL static bool checkPid(int pid, ExceptionSink* xsink);
 
@@ -63,10 +63,10 @@ private:
     const char* optsCwd(const QoreHashNode *opts, ExceptionSink *xsink);
 
 #ifdef __linux__
-    DLLLOCAL static QoreHashNode* getMemoryInfoLinux(int pid, ExceptionSink* xsink);
+    DLLLOCAL static QoreHashNode* getMemorySummaryInfoLinux(int pid, ExceptionSink* xsink);
 #endif
 #if defined(__APPLE__) && defined(__MACH__)
-    DLLLOCAL static QoreHashNode* getMemoryInfoDarwin(int pid, ExceptionSink* xsink);
+    DLLLOCAL static QoreHashNode* getMemorySummaryInfoDarwin(int pid, ExceptionSink* xsink);
 #endif
 };
 
