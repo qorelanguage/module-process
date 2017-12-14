@@ -369,10 +369,42 @@ bool ProcessPriv::terminate(ExceptionSink *xsink) {
 #ifdef __linux__
 #include <string.h>
 #include <inttypes.h>
+#include <sys/user.h>
 
 QoreHashNode* ProcessPriv::getMemorySummaryInfoLinux(int pid, ExceptionSink* xsink) {
     // open memory map for file
     QoreFile f;
+
+    {
+        QoreStringMaker str("/proc/%d/statm", pid);
+        if (f.open(str.c_str())) {
+            xsink->raiseErrnoException("PROCESS-GETMEMORYINFO-ERROR", errno, "could not read process status for PID %d", pid);
+            return nullptr;
+        }
+    }
+
+    int64 vsz = 0;
+    int64 rss = 0;
+
+    QoreString l;
+    if (!f.readLine(l)) {
+        // format: vsz rss shared text lib data dt
+        // find space after vsz
+        qore_offset_t pos = l.find(' ');
+        assert(pos != -1);
+        // find space after rss
+        qore_offset_t pos1 = l.find(' ', pos + 1);
+        l.terminate(pos1);
+        rss = strtoll(l.c_str() + pos + 1, nullptr, 10) * PAGE_SIZE;
+        l.terminate(pos);
+        vsz = l.toBigInt() * PAGE_SIZE;
+    }
+
+    ReferenceHolder<QoreHashNode> rv(new QoreHashNode(hashdeclMemorySummaryInfo, xsink), xsink);
+
+    rv->setKeyValue("vsz", new QoreBigIntNode(vsz), xsink);
+    rv->setKeyValue("rss", new QoreBigIntNode(rss), xsink);
+
     {
         QoreStringMaker str("/proc/%d/maps", pid);
         if (f.open(str.c_str())) {
@@ -381,11 +413,8 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoLinux(int pid, ExceptionSink* xsi
         }
     }
 
-    ReferenceHolder<QoreHashNode> rv(new QoreHashNode(hashdeclMemorySummaryInfo, xsink), xsink);
-
     int64 priv_size = 0;
 
-    QoreString l;
     while (true) {
         if (f.readLine(l))
             break;
