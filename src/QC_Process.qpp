@@ -391,7 +391,7 @@ string Process::readStderr(int bytes) {
 //! Returns process information for the process managed by the current object
 /** @return a @ref MemorySummaryInfo hash of memory info
 
-    @throw PROCESS-GETMEMORYINFO-ERROR an error occurred quering the process's memory usage (PID does not exist or no permission to read the process's virtual memory tables)
+    @throw PROCESS-GETMEMORYINFO-ERROR an error occurred querying the process's memory usage (PID does not exist or no permission to read the process's virtual memory tables)
     @throw PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
 
@@ -434,7 +434,7 @@ static *string Process::searchPath(string command, hash opts) {
 //! Returns process information for the current process
 /** @return a @ref MemorySummaryInfo hash of memory info
 
-    @throw PROCESS-GETMEMORYINFO-ERROR an error occurred quering the process's memory usage (PID does not exist or no permission to read the process's virtual memory tables)
+    @throw PROCESS-GETMEMORYINFO-ERROR an error occurred querying the process's memory usage (PID does not exist or no permission to read the process's virtual memory tables)
     @throw PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
 
     @note
@@ -452,7 +452,7 @@ static hash<MemorySummaryInfo> Process::getMemorySummaryInfo() {
 
     @return a @ref MemorySummaryInfo hash of memory info
 
-    @throw PROCESS-GETMEMORYINFO-ERROR an error occurred quering the process's memory usage (PID does not exist or no permission to read the process's virtual memory tables)
+    @throw PROCESS-GETMEMORYINFO-ERROR an error occurred querying the process's memory usage (PID does not exist or no permission to read the process's virtual memory tables)
     @throw PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
 
     @note
@@ -471,7 +471,7 @@ static hash<MemorySummaryInfo> Process::getMemorySummaryInfo(int pid) {
     @return @ref Qore::True "True" if the process is running, @ref Qore::False "False" if not
 
     @note
-    - this method has been implemented for Unix and Unix-like system only; on all other platforms a \c PROCESS-CHECKPID-UNSUPPORTED-ERROR exception is thrown
+    - this method has been implemented for Unix and Unix-like systems only; on all other platforms a \c PROCESS-CHECKPID-UNSUPPORTED-ERROR exception is thrown
 
     @see
     - @ref HAVE_PROCESS_CHECKPID
