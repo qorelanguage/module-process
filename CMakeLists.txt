@@ -41,6 +41,9 @@ else()
     message(FATAL_ERROR "The compiler ${CMAKE_CXX_COMPILER} has no C++11 support. Please use a different C++ compiler.")
 endif()
 
+include(CheckCXXSymbolExists)
+check_cxx_symbol_exists(kill signal.h HAVE_KILL)
+
 set(CPP_SRC
     src/qoreprocesshandler.h
     src/processpriv.h
@@ -198,6 +201,13 @@ qore_wrap_qpp_value(QPP_SOURCES ${QPP_SRC})
 SET (module_name "process")
 
 add_library(${module_name} SHARED ${CPP_SRC} ${QPP_SOURCES})
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    target_link_libraries(${module_name} proc)
+endif()
+
+configure_file(${CMAKE_SOURCE_DIR}/cmake/unix-config.h.cmake
+${CMAKE_BINARY_DIR}/unix-config.h)
 
 qore_binary_module(${module_name} "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}" ${Boost_LIBRARIES} ${WIN_LIBS})
 

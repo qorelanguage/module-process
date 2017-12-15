@@ -4,10 +4,12 @@
 
 #include "processpriv.h"
 #include "qoreprocesshandler.h"
+#include "unix-config.h"
 
 namespace bp = boost::process;
 namespace ex = boost::process::extend;
 
+DLLLOCAL extern const TypedHashDecl* hashdeclMemorySummaryInfo;
 
 #define PROCESS_CHECK(RET) if (!m_process) { xsink->raiseException("PROCESS-CHECK-ERROR", "Process is not initialized"); return (RET); }
 
@@ -362,4 +364,230 @@ bool ProcessPriv::terminate(ExceptionSink *xsink) {
     }
 
     return false;
+}
+
+#ifdef __linux__
+#include <string.h>
+#include <inttypes.h>
+#include <sys/user.h>
+
+QoreHashNode* ProcessPriv::getMemorySummaryInfoLinux(int pid, ExceptionSink* xsink) {
+    // open memory map for file
+    QoreFile f;
+
+    {
+        QoreStringMaker str("/proc/%d/statm", pid);
+        if (f.open(str.c_str())) {
+            xsink->raiseErrnoException("PROCESS-GETMEMORYINFO-ERROR", errno, "could not read process status for PID %d", pid);
+            return nullptr;
+        }
+    }
+
+    int64 vsz = 0;
+    int64 rss = 0;
+
+    QoreString l;
+    if (!f.readLine(l)) {
+        // format: vsz rss shared text lib data dt
+        // find space after vsz
+        qore_offset_t pos = l.find(' ');
+        assert(pos != -1);
+        // find space after rss
+        qore_offset_t pos1 = l.find(' ', pos + 1);
+        l.terminate(pos1);
+        rss = strtoll(l.c_str() + pos + 1, nullptr, 10) * PAGE_SIZE;
+        l.terminate(pos);
+        vsz = l.toBigInt() * PAGE_SIZE;
+    }
+
+    ReferenceHolder<QoreHashNode> rv(new QoreHashNode(hashdeclMemorySummaryInfo, xsink), xsink);
+
+    rv->setKeyValue("vsz", new QoreBigIntNode(vsz), xsink);
+    rv->setKeyValue("rss", new QoreBigIntNode(rss), xsink);
+
+    {
+        QoreStringMaker str("/proc/%d/maps", pid);
+        if (f.open(str.c_str())) {
+            xsink->raiseErrnoException("PROCESS-GETMEMORYINFO-ERROR", errno, "could not read virtual memory map for PID %d", pid);
+            return nullptr;
+        }
+    }
+
+    int64 priv_size = 0;
+
+    while (true) {
+        if (f.readLine(l))
+            break;
+
+        // maps line format: 0=start-end 1=perms 2=offset 3=device 4=inode 5=pathname
+        // ex: 01f1c000-01f3d000 rw-p 00000000 00:00 0                                  [heap]
+
+        // find memory range separator
+        qore_offset_t pos = l.find('-');
+        assert(pos != -1);
+
+        // find end of memory range
+        qore_offset_t pos1 = l.find(' ', pos + 1);
+        assert(pos1 != -1);
+
+        // if memory is not writable or private then skip
+        if (l[pos1 + 2] != 'w' || l[pos1 + 4] != 'p')
+            continue;
+
+        size_t start;
+        {
+            QoreString num(&l, pos);
+            start = strtoll(num.c_str(), nullptr, 16);
+        }
+
+        size_t end;
+        {
+            QoreString num(l.c_str() + pos + 1, pos1 - pos - 1);
+            end = strtoll(num.c_str(), nullptr, 16);
+        }
+
+        // get end of offset
+        pos = l.find(' ', pos1 + 6);
+        assert(pos != -1);
+
+        // get end of device
+        pos = l.find(' ', pos + 1);
+        assert(pos != -1);
+
+        // get end of inode
+        pos1 = l.find(' ', ++pos);
+        assert(pos1 != -1);
+        {
+            QoreString num(l.c_str() + pos, pos1 - pos);
+            // skip mmap()'ed entries with a non-zero inode value
+            if (num.toBigInt())
+                continue;
+        }
+
+        priv_size += (end - start);
+        //printd(5, "end: %lx start: %lx ps: %lld\n", end, start, priv_size);
+    }
+
+    rv->setKeyValue("priv", new QoreBigIntNode(priv_size), xsink);
+    return rv.release();
+}
+#endif
+
+#if defined(__APPLE__) && defined(__MACH__)
+#include <libproc.h>
+
+#include <mach/mach_init.h>
+#include <mach/mach_host.h>
+#include <mach/host_priv.h>
+#include <mach/mach_error.h>
+#include <mach/mach_traps.h>
+#include <mach/mach_vm.h>
+#include <mach/mach_port.h>
+#include <mach/vm_region.h>
+#include <mach/vm_page_size.h>
+
+QoreHashNode* ProcessPriv::getMemorySummaryInfoDarwin(int pid, ExceptionSink* xsink) {
+    // we use proc_taskinfo() to get VSZ and RSS, but only PRIV is interesting for us
+    struct proc_taskinfo taskinfo;
+
+    int rc = proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &taskinfo, sizeof(taskinfo));
+    if (rc <= 0) {
+        xsink->raiseException("PROCESS-GETMEMORYINFO-ERROR", "proc_pidinfo() returned %d", rc);
+        return nullptr;
+    }
+
+    //printd(5, "proc_pidinfo() rc %d vsz: " QLLD " rss: " QLLD "\n", rc, taskinfo.pti_virtual_size, taskinfo.pti_resident_size);
+
+    ReferenceHolder<QoreHashNode> rv(new QoreHashNode(hashdeclMemorySummaryInfo, xsink), xsink);
+
+    rv->setKeyValue("vsz", new QoreBigIntNode(taskinfo.pti_virtual_size), xsink);
+    rv->setKeyValue("rss", new QoreBigIntNode(taskinfo.pti_resident_size), xsink);
+
+    // NOTE: task_for_pid() requires special permissions to get a task port for any task except
+    // the current PID; root can do it, or the process can have a special entitlement that allows
+    // any task to be acquired.  The entitlement required for this is: com.apple.system-task-ports
+    // (ex: codesign -d --entitlements - /usr/bin/vmmap)
+    mach_port_t task;
+    // do not free the port allocated here
+    kern_return_t kr = task_for_pid(mach_task_self(), pid, &task);
+    if (kr != KERN_SUCCESS) {
+        xsink->raiseException("PROCESS-GETMEMORYINFO-ERROR", "task_for_pid() returned %d: %s", (int)kr, mach_error_string(kr));
+        return nullptr;
+    }
+
+    size_t priv_size = 0;
+    mach_vm_address_t addr = 0;
+
+    while (true) {
+        // this approach of determining private memory per process is taken from the Darwin top sources:
+        // https://opensource.apple.com/source/top/top-111.1.1/
+        vm_region_top_info_data_t info;
+        mach_msg_type_number_t count = VM_REGION_TOP_INFO_COUNT;
+        mach_vm_size_t vmsize = 0;
+        memory_object_name_t object_name;
+
+        kr = mach_vm_region(task, &addr, &vmsize, VM_REGION_TOP_INFO,
+            (vm_region_info_t)&info, &count, &object_name);
+        if (kr == KERN_INVALID_ADDRESS)
+            break;
+        if (kr != KERN_SUCCESS) {
+            xsink->raiseException("PROCESS-GETMEMORYINFO-ERROR", "mach_vm_region() returned %d: %s", (int)kr, mach_error_string(kr));
+            return nullptr;
+        }
+        // should not happen
+        if (!vmsize) {
+            xsink->raiseException("PROCESS-GETMEMORYINFO-ERROR", "mach_vm_region() returned vmsize 0");
+            return nullptr;
+        }
+
+        if (info.share_mode == SM_COW && info.ref_count == 1) {
+            // Treat single reference SM_COW as SM_PRIVATE
+            info.share_mode = SM_PRIVATE;
+        }
+
+        switch (info.share_mode) {
+            case SM_LARGE_PAGE:
+                // Treat SM_LARGE_PAGE the same as SM_PRIVATE
+                // since they are not shareable and are wired.
+            case SM_PRIVATE:
+                priv_size += info.private_pages_resident * vm_kernel_page_size;
+                priv_size += info.shared_pages_resident * vm_kernel_page_size;
+                break;
+
+            // Darwin's top has a more complicated method of processing SM_COW
+            // but we are not interested in kernel processes etc
+            case SM_COW:
+                priv_size += info.private_pages_resident * vm_kernel_page_size;
+                break;
+        }
+
+        addr = addr + vmsize;
+        if (!addr)
+            break;
+    }
+
+    rv->setKeyValue("priv", new QoreBigIntNode(priv_size), xsink);
+
+    return rv.release();
+}
+#endif
+
+QoreHashNode* ProcessPriv::getMemorySummaryInfo(int pid, ExceptionSink* xsink) {
+#ifdef __linux__
+    return getMemorySummaryInfoLinux(pid, xsink);
+#elif defined(__APPLE__) && defined(__MACH__)
+    return getMemorySummaryInfoDarwin(pid, xsink);
+#else
+    xsink->raiseException("PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR", "this call is not supported on this platform");
+    return nullptr;
+#endif
+}
+
+bool ProcessPriv::checkPid(int pid, ExceptionSink* xsink) {
+#ifdef HAVE_KILL
+    return !kill(pid, 0);
+#else
+    xsink->raiseException("PROCESS-CHECKPID-UNSUPPORTED-ERROR", "this call is not supported on this platform");
+    return false;
+#endif
 }

@@ -68,6 +68,7 @@ public class Main inherits QUnit::Test {
         addTestCase("detach test negative", \detachTestNegative());
         addTestCase("wait timeout", \waitTimeoutTest());
         addTestCase("absolute test", \absoluteTest());
+        addTestCase("mem and checkPid test", \memoryAndCheckPidTest());
 
         # Return for compatibility with test harness that checks return value.
         set_return_value(main());
@@ -461,6 +462,19 @@ public class Main inherits QUnit::Test {
         }
         p.wait();
         assertEq(0, p.exitCode(), "process exit code");
+    }
+
+    memoryAndCheckPidTest() {
+        if (HAVE_PROCESS_GETMEMORYINFO) {
+            hash<auto> h = Process::getMemorySummaryInfo();
+            assertGt(0, h.vsz);
+            assertGt(0, h.rss);
+            assertGt(0, h.priv);
+            assertEq("hash<MemorySummaryInfo>", h.fullType());
+        }
+
+        if (HAVE_PROCESS_CHECKPID)
+            assertTrue(Process::checkPid(getpid()));
     }
 }
 
