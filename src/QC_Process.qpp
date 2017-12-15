@@ -5,9 +5,13 @@
 #if defined(__linux__) || (defined(__APPLE__) && defined(__MACH__))
 #define HAVE_PROCESS_GETMEMORYINFO 1
 #define HAVE_PROCESS_CHECKPID 1
+#define HAVE_PROCESS_TERMINATE 1
+#define HAVE_PROCESS_WAITFORTERMINATION 1
 #else
 #define HAVE_PROCESS_GETMEMORYINFO 0
 #define HAVE_PROCESS_CHECKPID 0
+#define HAVE_PROCESS_TERMINATE 0
+#define HAVE_PROCESS_WAITFORTERMINATION 0
 #endif
 
 DLLLOCAL extern const TypedHashDecl* hashdeclMemorySummaryInfo;
@@ -21,6 +25,12 @@ const HAVE_PROCESS_GETMEMORYINFO = bool(HAVE_PROCESS_GETMEMORYINFO);
 
 //! defines if the @ref Qore::Process::Process::checkPid() "Process::checkPid()" method is available on the current platform
 const HAVE_PROCESS_CHECKPID = bool(HAVE_PROCESS_CHECKPID);
+
+//! defines if the static @ref Qore::Process::Process::terminate() "Process::terminate()" method is available on the current platform
+const HAVE_PROCESS_TERMINATE = bool(HAVE_PROCESS_TERMINATE);
+
+//! defines if the static @ref Qore::Process::Process::waitForTermination() "Process::waitForTermination()" method is available on the current platform
+const HAVE_PROCESS_WAITFORTERMINATION = bool(HAVE_PROCESS_WAITFORTERMINATION);
 //@}
 
 //! A hash of summary memory information as provided by @ref Qore::Process::Process::getMemorySummaryInfo() "Process::getMemorySummaryInfo()"
@@ -470,6 +480,8 @@ static hash<MemorySummaryInfo> Process::getMemorySummaryInfo(int pid) {
 
     @return @ref Qore::True "True" if the process is running, @ref Qore::False "False" if not
 
+    @throw PROCESS-CHECKPID-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
+
     @note
     - this method has been implemented for Unix and Unix-like systems only; on all other platforms a \c PROCESS-CHECKPID-UNSUPPORTED-ERROR exception is thrown
 
@@ -479,4 +491,34 @@ static hash<MemorySummaryInfo> Process::getMemorySummaryInfo(int pid) {
 */
 static bool Process::checkPid(int pid) {
     return ProcessPriv::checkPid(pid, xsink);
+}
+
+//! terminate a process unconditionally given its PID
+/** @param pid the PID of the process to terminate
+
+    @throw PROCESS-TERMINATE-ERROR insufficient permissions to terminate process
+    @throw PROCESS-INVALID-PID invalid PID
+    @throw PROCESS-TERMINATE-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
+
+    @note this method will also clean up any child processes if necessary (i.e. on Unix-like platforms) in case the process killed is a child of the current process
+
+    @see
+    - @ref HAVE_PROCESS_TERMINATE
+    - @ref Process::terminate()
+*/
+static nothing Process::terminate(int pid) {
+    ProcessPriv::terminate(pid, xsink);
+}
+
+//! wait until a given PID terminates
+/** @param pid the PID of the process to wait for
+
+    @throw PROCESS-WAITFORTERMINATION-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
+
+    @see
+    - @ref HAVE_PROCESS_WAITFORTERMINATION
+    - @ref Process::terminate()
+*/
+static nothing Process::waitForTermination(int pid) {
+    ProcessPriv::waitForTermination(pid, xsink);
 }

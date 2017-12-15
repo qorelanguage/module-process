@@ -51,6 +51,10 @@ public:
 
     DLLLOCAL static bool checkPid(int pid, ExceptionSink* xsink);
 
+    DLLLOCAL static void terminate(int pid, ExceptionSink* xsink);
+
+    DLLLOCAL static void waitForTermination(int pid, ExceptionSink* xsink);
+
 private:
     bp::child *m_process;
     bp::opstream m_in;
