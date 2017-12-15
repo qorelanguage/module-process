@@ -591,3 +591,45 @@ bool ProcessPriv::checkPid(int pid, ExceptionSink* xsink) {
     return false;
 #endif
 }
+
+#ifdef HAVE_KILL
+#include <unistd.h>
+#include <sys/wait.h>
+
+// 250ms poll interval when waiting for a process to terminate
+#define WAIT_POLL_US 250000
+#endif
+
+void ProcessPriv::terminate(int pid, ExceptionSink* xsink) {
+#ifdef HAVE_KILL
+    if (kill(pid, SIGKILL)) {
+        switch (errno) {
+            case EPERM:
+                xsink->raiseException("PROCESS-TERMINATE-ERROR", "insufficient permissions to terminate PID %d", pid);
+                break;
+            case ESRCH:
+            default:
+                xsink->raiseErrnoException("PROCESS-INVALID-PID", errno, "no process with PID %d can be found", pid);
+                break;
+        }
+    }
+    // now we call waitpid in case the program killed was a child process
+    // in case not, errors are ignored here
+    int status;
+    ::waitpid(pid, &status, 0);
+#else
+    xsink->raiseException("PROCESS-TERMINATE-UNSUPPORTED-ERROR", "this call is not supported on this platform");
+#endif
+}
+
+void ProcessPriv::waitForTermination(int pid, ExceptionSink* xsink) {
+#ifdef HAVE_KILL
+    while (true) {
+        if (kill(pid, 0))
+            break;
+        usleep(WAIT_POLL_US);
+    }
+#else
+    xsink->raiseException("HAVE_PROCESS_WAITFORTERMINATION", "this call is not supported on this platform");
+#endif
+}
