@@ -534,6 +534,7 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoDarwin(int pid, ExceptionSink* xs
             xsink->raiseException("PROCESS-GETMEMORYINFO-ERROR", "mach_vm_region() returned %d: %s", (int)kr, mach_error_string(kr));
             return nullptr;
         }
+        //printd(0, "addr: %p size: %ld share_mode: %d\n", addr, vmsize, info.share_mode);
         // should not happen
         if (!vmsize) {
             xsink->raiseException("PROCESS-GETMEMORYINFO-ERROR", "mach_vm_region() returned vmsize 0");
@@ -550,8 +551,7 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoDarwin(int pid, ExceptionSink* xs
                 // Treat SM_LARGE_PAGE the same as SM_PRIVATE
                 // since they are not shareable and are wired.
             case SM_PRIVATE:
-                priv_size += info.private_pages_resident * vm_kernel_page_size;
-                priv_size += info.shared_pages_resident * vm_kernel_page_size;
+                priv_size += vmsize;
                 break;
 
             // Darwin's top has a more complicated method of processing SM_COW
