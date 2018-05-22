@@ -19,7 +19,7 @@ set (VERSION_PATCH 2)
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake )
 
 
-find_package(Qore REQUIRED)
+find_package(Qore 0.9 REQUIRED)
 #find_package(Threads REQUIRED)
 if (NOT USE_INTERNAL_BOOST)
     find_package(Boost 1.63 COMPONENTS filesystem system)
