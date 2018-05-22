@@ -48,7 +48,7 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
     if (arguments) {
         //std::cout << "size: " << arguments->size() << std::endl;
         for (qore_size_t i = 0; i < arguments->size(); i++) {
-            QoreStringNodeValueHelper s(arguments->retrieve_entry(i));
+            QoreStringNodeValueHelper s(arguments->retrieveEntry(i));
             //std::cout << "arg=" << s->getBuffer() << std::endl;
             a.push_back(s->getBuffer());
         }
@@ -86,27 +86,26 @@ ProcessPriv::~ProcessPriv() {
     m_process = 0;
 }
 
-const ResolvedCallReferenceNode* ProcessPriv::optsExecutor(const char * name, const QoreHashNode *opts, ExceptionSink *xsink)
+const ResolvedCallReferenceNode* ProcessPriv::optsExecutor(const char* name, const QoreHashNode* oh, ExceptionSink *xsink)
 {
-    const ResolvedCallReferenceNode* ret = 0;
+    const ResolvedCallReferenceNode* ret = nullptr;
 
-    if (opts) {
-        const QoreHashNode *oh = reinterpret_cast<const QoreHashNode*>(opts);
+    if (oh) {
         if (oh->existsKey(name)) {
-            const AbstractQoreNode *n = oh->getKeyValue(name);
-            if (n->getType() != NT_RUNTIME_CLOSURE && n->getType() != NT_FUNCREF)
+            QoreValue n = oh->getKeyValue(name);
+            if (n.getType() != NT_RUNTIME_CLOSURE && n.getType() != NT_FUNCREF)
             {
                 xsink->raiseException("PROCESS-OPTIONS-ERROR",
                                       "executor '%s' required code as value, got: '%s'(%d)",
                                       name,
-                                      n->getTypeName(),
-                                      n->getType()
+                                      n.getTypeName(),
+                                      n.getType()
                                      );
                 return ret;
             }
 
             // TODO/FIXME: should I increase ref count here?
-            ret = reinterpret_cast<const ResolvedCallReferenceNode*>(n);
+            ret = n.get<const ResolvedCallReferenceNode>();
         }
     }
 
@@ -121,21 +120,21 @@ bp::environment ProcessPriv::optsEnv(const QoreHashNode *opts, ExceptionSink *xs
     bp::environment ret;
 
     if (opts && opts->existsKey("env")) {
-        const AbstractQoreNode *n = opts->getKeyValue("env");
-        if (n->getType() != NT_HASH)
+        QoreValue n = opts->getKeyValue("env");
+        if (n.getType() != NT_HASH)
         {
             xsink->raiseException("PROCESS-OPTIONS-ERROR",
                                   "Environment variables option must be a hash, got: '%s'(%d)",
-                                  n->getTypeName(),
-                                  n->getType()
+                                  n.getTypeName(),
+                                  n.getType()
                                  );
             return ret;
         }
 
-        ConstHashIterator it(reinterpret_cast<const QoreHashNode*>(n));
+        ConstHashIterator it(n.get<const QoreHashNode>());
         while (it.next()) {
-            QoreStringValueHelper val(it.getValue());
-            ret[it.getKey()] = val->getBuffer();
+            QoreStringValueHelper val(it.get());
+            ret[it.getKey()] = val->c_str();
         }
 
         return ret;
@@ -149,18 +148,18 @@ const char* ProcessPriv::optsCwd(const QoreHashNode *opts, ExceptionSink *xsink)
     const char * ret = ".";
 
     if (opts && opts->existsKey("cwd")) {
-        const AbstractQoreNode *n = opts->getKeyValue("cwd");
-        if (n->getType() != NT_STRING)
+        QoreValue n = opts->getKeyValue("cwd");
+        if (n.getType() != NT_STRING)
         {
             xsink->raiseException("PROCESS-OPTIONS-ERROR",
                                   "Working dir 'cwd' option must be a string, got: '%s'(%d)",
-                                  n->getTypeName(),
-                                  n->getType()
+                                  n.getTypeName(),
+                                  n.getType()
                                  );
             return ret;
         }
         QoreStringValueHelper s(n);
-        ret = s->getBuffer();
+        ret = s->c_str();
     }
 
     return ret;
@@ -171,22 +170,22 @@ boost::filesystem::path ProcessPriv::optsPath(const char* command, const QoreHas
     boost::filesystem::path ret;
 
     if (opts && opts->existsKey("path")) {
-        const AbstractQoreNode *n = opts->getKeyValue("path");
-        if (n->getType() != NT_LIST) {
+        QoreValue n = opts->getKeyValue("path");
+        if (n.getType() != NT_LIST) {
             xsink->raiseException("PROCESS-OPTIONS-ERROR",
                                   "Path option must be a list of strings, got: '%s'(%d)",
-                                  n->getTypeName(),
-                                  n->getType()
+                                  n.getTypeName(),
+                                  n.getType()
                                  );
             return ret;
         }
 
-        const QoreListNode *l = reinterpret_cast<const QoreListNode *>(n);
+        const QoreListNode *l = n.get<const QoreListNode>();
         std::vector<boost::filesystem::path> paths;
 
         for (qore_size_t i = 0; i < l->size(); i++) {
-            QoreStringValueHelper s(l->retrieve_entry(i));
-            paths.push_back(boost::filesystem::path(s->getBuffer()));
+            QoreStringValueHelper s(l->retrieveEntry(i));
+            paths.push_back(boost::filesystem::path(s->c_str()));
         }
 
         ret = bp::search_path(command, paths);
@@ -402,8 +401,8 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoLinux(int pid, ExceptionSink* xsi
 
     ReferenceHolder<QoreHashNode> rv(new QoreHashNode(hashdeclMemorySummaryInfo, xsink), xsink);
 
-    rv->setKeyValue("vsz", new QoreBigIntNode(vsz), xsink);
-    rv->setKeyValue("rss", new QoreBigIntNode(rss), xsink);
+    rv->setKeyValue("vsz", vsz, xsink);
+    rv->setKeyValue("rss", rss, xsink);
 
     {
         QoreStringMaker str("/proc/%d/maps", pid);
@@ -468,7 +467,7 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoLinux(int pid, ExceptionSink* xsi
         //printd(5, "end: %lx start: %lx ps: %lld\n", end, start, priv_size);
     }
 
-    rv->setKeyValue("priv", new QoreBigIntNode(priv_size), xsink);
+    rv->setKeyValue("priv", priv_size, xsink);
     return rv.release();
 }
 #endif
@@ -500,8 +499,8 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoDarwin(int pid, ExceptionSink* xs
 
     ReferenceHolder<QoreHashNode> rv(new QoreHashNode(hashdeclMemorySummaryInfo, xsink), xsink);
 
-    rv->setKeyValue("vsz", new QoreBigIntNode(taskinfo.pti_virtual_size), xsink);
-    rv->setKeyValue("rss", new QoreBigIntNode(taskinfo.pti_resident_size), xsink);
+    rv->setKeyValue("vsz", taskinfo.pti_virtual_size, xsink);
+    rv->setKeyValue("rss", taskinfo.pti_resident_size, xsink);
 
     // NOTE: task_for_pid() requires special permissions to get a task port for any task except
     // the current PID; root can do it, or the process can have a special entitlement that allows
@@ -566,7 +565,7 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoDarwin(int pid, ExceptionSink* xs
             break;
     }
 
-    rv->setKeyValue("priv", new QoreBigIntNode(priv_size), xsink);
+    rv->setKeyValue("priv", priv_size, xsink);
 
     return rv.release();
 }
