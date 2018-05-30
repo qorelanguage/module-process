@@ -17,7 +17,7 @@ DLLLOCAL extern const TypedHashDecl* hashdeclMemorySummaryInfo;
 ProcessPriv::ProcessPriv(pid_t pid, ExceptionSink *xsink)
 {
     try {
-	int i = boost::numeric_cast<int>(pid);
+        int i = boost::numeric_cast<int>(pid);
         m_process = new bp::child(i);
     }
     catch (const std::exception &ex) {
