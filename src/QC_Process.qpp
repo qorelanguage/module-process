@@ -102,7 +102,7 @@ on_setup: hash: (name : "on_setup", exe : "/usr/bin/true", pid : -1, exit : 127,
 on_success: hash: (name : "on_success", exe : "/usr/bin/true", pid : 23014, exit : 127, error_code : 0, error_message : "Success", error_category : "system")    @endcode
 
  */
-qclass Process [dom=PROCESS; arg=ProcessPriv* priv; ns=Qore::Process];
+qclass Process [dom=EXTERNAL_PROCESS; arg=ProcessPriv* priv; ns=Qore::Process];
 
 
 //! Construct the child from a pid.
