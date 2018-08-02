@@ -2,6 +2,49 @@
 
 #include "processpriv.h"
 
+#if defined(__linux__) || (defined(__APPLE__) && defined(__MACH__))
+#define HAVE_PROCESS_GETMEMORYINFO 1
+#define HAVE_PROCESS_CHECKPID 1
+#define HAVE_PROCESS_TERMINATE 1
+#define HAVE_PROCESS_WAITFORTERMINATION 1
+#else
+#define HAVE_PROCESS_GETMEMORYINFO 0
+#define HAVE_PROCESS_CHECKPID 0
+#define HAVE_PROCESS_TERMINATE 0
+#define HAVE_PROCESS_WAITFORTERMINATION 0
+#endif
+
+DLLLOCAL extern const TypedHashDecl* hashdeclMemorySummaryInfo;
+
+/** @defgroup process_constants Process Constants
+    Constants related to process module functionality
+ */
+//@{
+//! defines if the @ref Qore::Process::Process::getMemorySummaryInfo() "Process::getMemorySummaryInfo()" methods are available on the current platform
+const HAVE_PROCESS_GETMEMORYINFO = bool(HAVE_PROCESS_GETMEMORYINFO);
+
+//! defines if the @ref Qore::Process::Process::checkPid() "Process::checkPid()" method is available on the current platform
+const HAVE_PROCESS_CHECKPID = bool(HAVE_PROCESS_CHECKPID);
+
+//! defines if the static @ref Qore::Process::Process::terminate() "Process::terminate()" method is available on the current platform
+const HAVE_PROCESS_TERMINATE = bool(HAVE_PROCESS_TERMINATE);
+
+//! defines if the static @ref Qore::Process::Process::waitForTermination() "Process::waitForTermination()" method is available on the current platform
+const HAVE_PROCESS_WAITFORTERMINATION = bool(HAVE_PROCESS_WAITFORTERMINATION);
+//@}
+
+//! A hash of summary memory information as provided by @ref Qore::Process::Process::getMemorySummaryInfo() "Process::getMemorySummaryInfo()"
+/**
+*/
+hashdecl Qore::Process::MemorySummaryInfo {
+    //! the virtual size of the process in bytes including all shared/dynamic libraries, code, and data
+    int vsz;
+    //! the resident size of the process in bytes (RAM in use)
+    int rss;
+    //! the private memory size of the process; meaning heap and stack size, without any code or shared/dynamic libraries included; this gives a measure of how much memory the process itself is using
+    int priv;
+}
+
 //! System process wrapper.
 /** A process is an independently executable entity, which is different
     from a thread, in that it has it's own resources. Those include
@@ -48,7 +91,7 @@ p.wait();
 
     The \c opts hash can hold following keys. All keys are optional.
 
-    - \c env : replace current process' ENV with a hash of env variables.
+    - \c env : replace current process's ENV with a hash of env variables.
                Use @code ENV + ( "FOO" : "bar") @endcode is you want to merge parent's ENV to child.
     - \c cwd : a string with initial "current working directory",
                a dir which child should take as its initial work dir
@@ -106,17 +149,16 @@ qclass Process [dom=EXTERNAL_PROCESS; arg=ProcessPriv* priv; ns=Qore::Process];
 
 
 //! Construct the child from a pid.
-/** There is no guarantee that this will work. The process need the right
-    access rights, which are very platform specific.
+/** @param id the PID of the process.
 
-    The process with that PID must exist before.
+    @note The only functionality available when this constructor is used is id(); all other calls will fail
  */
 Process::constructor(int pid) {
     self->setPrivate(CID_PROCESS, new ProcessPriv(pid, xsink));
 }
 
 //! Construct a child from given arguments and launch it.
-/** @param command a string with program to be run
+/** @param command a string with program to be run; can be either an absolute path or a simple command to be found in the search path
 
     @throw PROCESS-CONSTRUCTOR-ERROR in case of error. Exception \c desc contains the additional information
     @throw PROCESS-SEARCH-PATH-ERROR in case when the \c command is not found in given PATH
@@ -126,7 +168,7 @@ Process::constructor(string command) {
 }
 
 //! Construct a child from given arguments and launch it.
-/** @param command a string with program to be run
+/** @param command a string with program to be run; can be either an absolute path or a simple command to be found in the search path
     @param opts a hash with additional options for the child process @ref process_options
 
     @throw PROCESS-CONSTRUCTOR-ERROR in case of error. Exception \c desc contains the additional information
@@ -138,7 +180,7 @@ Process::constructor(string command, hash opts) {
 }
 
 //! Construct a child from given arguments and launch it.
-/** @param command a string with program to be run
+/** @param command a string with program to be run; can be either an absolute path or a simple command to be found in the search path
     @param arguments a list with additiona \c command arguments
 
     @throw PROCESS-CONSTRUCTOR-ERROR in case of error. Exception \c desc contains the additional information
@@ -149,7 +191,7 @@ Process::constructor(string command, softlist arguments) {
 }
 
 //! Construct a child from given arguments and launch it.
-/** @param command a string with program to be run
+/** @param command a string with program to be run; can be either an absolute path or a simple command to be found in the search path
     @param arguments a list with additiona \c command arguments
     @param opts a hash with additional options for the child process. See @ref process_options
 
@@ -169,7 +211,7 @@ Process::copy() {
    xsink->raiseException("PROCESS-COPY-ERROR", "copying Proces objects is currently not supported");
 }
 
-//! Get the child process' exit code.
+//! Get the child process's exit code.
 /** The return value is without any meaning if the child wasn't waited for or if it was terminated.
 
     @return int an exit code
@@ -204,7 +246,9 @@ bool Process::valid() {
 /** @return bool True if the child is running
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
- */
+
+    @see @ref Process::checkPid()
+*/
 bool Process::running() {
     return priv->running(xsink);
 }
@@ -322,14 +366,14 @@ nothing Process::write(number n) {
     priv->write(s->getBuffer(), xsink);
 }
 
-//! Read from child process' standard output - one line, up to EOL
+//! Read from child process's standard output - one line, up to EOL
 /** @return string with data
  */
 string Process::readStdout() {
     return priv->readStdout();
 }
 
-//! Read from child process' standard output - exact byte size
+//! Read from child process's standard output - exact byte size
 /** @return string with data
     @param bytes a count of bytes to read; if the value is negative, then a single line is read
     @throw PROCESS-READ-ERROR in case of read error
@@ -338,14 +382,14 @@ string Process::readStdout(int bytes) {
     return bytes < 0 ? priv->readStdout() : priv->readStdout(bytes, xsink);
 }
 
-//! Read from child process' standard error - one line, up to EOL
+//! Read from child process's standard error - one line, up to EOL
 /** @return string with data
  */
 string Process::readStderr() {
     return priv->readStderr();
 }
 
-//! Read from child process' standard output - exact byte size
+//! Read from child process's standard output - exact byte size
 /** @return string with data
     @param bytes a count of bytes to read; if the value is negative, then a single line is read
     @throw PROCESS-READ-ERROR in case of read error
@@ -354,7 +398,27 @@ string Process::readStderr(int bytes) {
     return bytes < 0 ? priv->readStderr() : priv->readStderr(bytes, xsink);
 }
 
-//! Search for full path of command in current process' PATH
+//! Returns process information for the process managed by the current object
+/** @return a @ref MemorySummaryInfo hash of memory info
+
+    @throw PROCESS-GETMEMORYINFO-ERROR an error occurred querying the process's memory usage (PID does not exist or no permission to read the process's virtual memory tables)
+    @throw PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+
+    @note
+    - this method has been implemented for Linux and MacOS only; on all other platforms a \c PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR exception is thrown
+    - on MacOS the memory of another process cannot be read unless the calling process has root privileges or the process has the \c "com.apple.system-task-ports" entitlement
+
+    @see HAVE_PROCESS_GETMEMORYINFO
+*/
+hash<MemorySummaryInfo> Process::getMemorySummaryInfo() {
+    int pid = priv->id(xsink);
+    if (*xsink)
+        return QoreValue();
+    return ProcessPriv::getMemorySummaryInfo(pid, xsink);
+}
+
+//! Search for full path of command in current process's PATH
 /** @param command a string with command name
 
     @return string with full path of the \c command
@@ -365,7 +429,7 @@ static *string Process::searchPath(string command) {
     return new QoreStringNode(ProcessPriv::optsPath(command->getBuffer(), 0, xsink).string());
 }
 
-//! Search for full path of command in current process' PATH
+//! Search for full path of command in current process's PATH
 /** @param command a string with command name
     @param opts a hash with process options. @ref process_options - \c path is important here
 
@@ -375,4 +439,86 @@ static *string Process::searchPath(string command) {
  */
 static *string Process::searchPath(string command, hash opts) {
     return new QoreStringNode(ProcessPriv::optsPath(command->getBuffer(), opts, xsink).string());
+}
+
+//! Returns process information for the current process
+/** @return a @ref MemorySummaryInfo hash of memory info
+
+    @throw PROCESS-GETMEMORYINFO-ERROR an error occurred querying the process's memory usage (PID does not exist or no permission to read the process's virtual memory tables)
+    @throw PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
+
+    @note
+    - this method has been implemented for Linux and MacOS only; on all other platforms a \c PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR exception is thrown
+    - on MacOS the memory of another process cannot be read unless the calling process has root privileges or the process has the \c "com.apple.system-task-ports" entitlement
+
+    @see HAVE_PROCESS_GETMEMORYINFO
+*/
+static hash<MemorySummaryInfo> Process::getMemorySummaryInfo() {
+    return ProcessPriv::getMemorySummaryInfo(getpid(), xsink);
+}
+
+//! Returns process information for the given PID
+/** @param pid the PID of the process
+
+    @return a @ref MemorySummaryInfo hash of memory info
+
+    @throw PROCESS-GETMEMORYINFO-ERROR an error occurred querying the process's memory usage (PID does not exist or no permission to read the process's virtual memory tables)
+    @throw PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
+
+    @note
+    - this method has been implemented for Linux and MacOS only; on all other platforms a \c PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR exception is thrown
+    - on MacOS the memory of another process cannot be read unless the calling process has root privileges or the process has the \c "com.apple.system-task-ports" entitlement
+
+    @see HAVE_PROCESS_GETMEMORYINFO
+*/
+static hash<MemorySummaryInfo> Process::getMemorySummaryInfo(int pid) {
+    return ProcessPriv::getMemorySummaryInfo(pid, xsink);
+}
+
+//! Returns @ref Qore::True "True" if the process is running, @ref Qore::False "False" if not
+/** @param pid the PID of the process
+
+    @return @ref Qore::True "True" if the process is running, @ref Qore::False "False" if not
+
+    @throw PROCESS-CHECKPID-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
+
+    @note
+    - this method has been implemented for Unix and Unix-like systems only; on all other platforms a \c PROCESS-CHECKPID-UNSUPPORTED-ERROR exception is thrown
+
+    @see
+    - @ref HAVE_PROCESS_CHECKPID
+    - @ref Process::running()
+*/
+static bool Process::checkPid(int pid) {
+    return ProcessPriv::checkPid(pid, xsink);
+}
+
+//! terminate a process unconditionally given its PID
+/** @param pid the PID of the process to terminate
+
+    @throw PROCESS-TERMINATE-ERROR insufficient permissions to terminate process
+    @throw PROCESS-INVALID-PID invalid PID
+    @throw PROCESS-TERMINATE-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
+
+    @note this method will also clean up any child processes if necessary (i.e. on Unix-like platforms) in case the process killed is a child of the current process
+
+    @see
+    - @ref HAVE_PROCESS_TERMINATE
+    - @ref Process::terminate()
+*/
+static nothing Process::terminate(int pid) {
+    ProcessPriv::terminate(pid, xsink);
+}
+
+//! wait until a given PID terminates
+/** @param pid the PID of the process to wait for
+
+    @throw PROCESS-WAITFORTERMINATION-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
+
+    @see
+    - @ref HAVE_PROCESS_WAITFORTERMINATION
+    - @ref Process::terminate()
+*/
+static nothing Process::waitForTermination(int pid) {
+    ProcessPriv::waitForTermination(pid, xsink);
 }

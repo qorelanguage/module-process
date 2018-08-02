@@ -67,6 +67,9 @@ public class Main inherits QUnit::Test {
         addTestCase("detach test", \detachTest());
         addTestCase("detach test negative", \detachTestNegative());
         addTestCase("wait timeout", \waitTimeoutTest());
+        addTestCase("absolute test", \absoluteTest());
+        addTestCase("mem and checkPid test", \memoryAndCheckPidTest());
+        addTestCase("terminate test", \terminateTest());
 
         # Return for compatibility with test harness that checks return value.
         set_return_value(main());
@@ -106,6 +109,21 @@ public class Main inherits QUnit::Test {
         catch (hash ex) {
             assertEq("PROCESS-SEARCH-PATH-ERROR", ex.err, "some-not-existing-exec for searchPath");
         }
+    }
+
+    absoluteTest() {
+        string path = normalize_dir(get_script_dir() + DirSep + "test_true.q");
+        Process proc(path);
+        proc.wait();
+        assertEq(0, proc.exitCode());
+
+        # negative tests
+        path = "abc" + DirSep + "test_true.q";
+        assertThrows("PROCESS-SEARCH-PATH-ERROR", sub () { proc = new Process(path, ("path": ())); });
+        path = "test_true.q";
+        assertThrows("PROCESS-SEARCH-PATH-ERROR", sub () { proc = new Process(path); });
+        path = DirSep + "test_true.q";
+        assertThrows("PROCESS-CONSTRUCTOR-ERROR", sub () { proc = new Process(path, ("path": ())); });
     }
 
     constructorTest() {
@@ -445,6 +463,51 @@ public class Main inherits QUnit::Test {
         }
         p.wait();
         assertEq(0, p.exitCode(), "process exit code");
+    }
+
+    memoryAndCheckPidTest() {
+        if (HAVE_PROCESS_GETMEMORYINFO) {
+            hash<auto> h = Process::getMemorySummaryInfo();
+            assertGt(0, h.vsz);
+            assertGt(0, h.rss);
+            assertGt(0, h.priv);
+            assertEq("hash<MemorySummaryInfo>", h.fullType());
+            assertThrows("PROCESS-GETMEMORYINFO-ERROR", \Process::getMemorySummaryInfo(), -10);
+        }
+        else {
+            assertThrows("PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR", \Process::getMemorySummaryInfo(), -10);
+        }
+
+        if (HAVE_PROCESS_CHECKPID) {
+            assertTrue(Process::checkPid(getpid()));
+        }
+        else {
+            assertThrows("PROCESS-CHECKPID-UNSUPPORTED-ERROR", \Process::checkPid(), -10);
+        }
+    }
+
+    terminateTest() {
+        Process p("tee");
+        assertTrue(p.running());
+        int pid = p.id();
+        Process::terminate(pid);
+        # we do not have to call Process::waitForTermination() here because we are terminating a child process
+        # and terminate calls waitpid() on Unix platforms
+        assertFalse(p.running());
+        if (HAVE_PROCESS_CHECKPID) {
+            assertFalse(Process::checkPid(pid));
+        }
+
+        # negative test for Process::terminate() with an invalid PID
+        assertThrows("PROCESS-INVALID-PID", \Process::terminate(), 9999999);
+
+        if (HAVE_PROCESS_WAITFORTERMINATION) {
+            # negative test for Process::waitForTermination() with an invalid PID
+            assertNothing(Process::waitForTermination(9999999));
+        }
+        else {
+            assertThrows("PROCESS-WAITFORTERMINATION-UNSUPPORTED-ERROR", \Process::waitForTermination(), -10);
+        }
     }
 }
 

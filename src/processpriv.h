@@ -4,6 +4,8 @@
 #include <qore/Qore.h>
 #include <boost/process.hpp>
 
+#include <unistd.h>
+
 DLLLOCAL extern qore_classid_t CID_PROCESS;
 DLLLOCAL extern QoreClass* QC_PROCESS;
 
@@ -43,7 +45,15 @@ public:
     DLLLOCAL QoreStringNode* readStdout();
     DLLLOCAL QoreStringNode* readStdout(std::streamsize size, ExceptionSink* xsink);
 
-    static boost::filesystem::path optsPath(const char* command, const QoreHashNode *opts, ExceptionSink *xsink);
+    DLLLOCAL static boost::filesystem::path optsPath(const char* command, const QoreHashNode *opts, ExceptionSink *xsink);
+
+    DLLLOCAL static QoreHashNode* getMemorySummaryInfo(int pid, ExceptionSink* xsink);
+
+    DLLLOCAL static bool checkPid(int pid, ExceptionSink* xsink);
+
+    DLLLOCAL static void terminate(int pid, ExceptionSink* xsink);
+
+    DLLLOCAL static void waitForTermination(int pid, ExceptionSink* xsink);
 
 private:
     bp::child *m_process;
@@ -55,6 +65,13 @@ private:
 
     bp::environment optsEnv(const QoreHashNode *opts, ExceptionSink *xsink);
     const char* optsCwd(const QoreHashNode *opts, ExceptionSink *xsink);
+
+#ifdef __linux__
+    DLLLOCAL static QoreHashNode* getMemorySummaryInfoLinux(int pid, ExceptionSink* xsink);
+#endif
+#if defined(__APPLE__) && defined(__MACH__)
+    DLLLOCAL static QoreHashNode* getMemorySummaryInfoDarwin(int pid, ExceptionSink* xsink);
+#endif
 };
 
 #endif

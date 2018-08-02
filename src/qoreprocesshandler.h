@@ -82,22 +82,22 @@ public:
             return;
         }
 
-        QoreHashNode *e = new QoreHashNode();
+        QoreHashNode *e = new QoreHashNode(autoTypeInfo);
         e->setKeyValue("name", new QoreStringNode(info), m_xsink);
         e->setKeyValue("exe", new QoreStringNode(exec.exe), m_xsink);
 #ifndef WINDOWS_API
-        e->setKeyValue("pid", new QoreBigIntNode(exec.pid), m_xsink);
+        e->setKeyValue("pid", exec.pid, m_xsink);
 #else
-        e->setKeyValue("pid", new QoreBigIntNode(exec.proc_info.dwProcessId), m_xsink);
+        e->setKeyValue("pid", exec.proc_info.dwProcessId, m_xsink);
 #endif
-        e->setKeyValue("exit", new QoreBigIntNode(*(exec.exit_status)), m_xsink);
+        e->setKeyValue("exit", (int64)*(exec.exit_status), m_xsink);
         // std::error_code &ec to hash too
-        e->setKeyValue("error_code", new QoreBigIntNode(ec.value()), m_xsink);
+        e->setKeyValue("error_code", ec.value(), m_xsink);
         e->setKeyValue("error_message", new QoreStringNode(ec.message()), m_xsink);
         e->setKeyValue("error_category", new QoreStringNode(ec.category().name()), m_xsink);
 
-        ReferenceHolder<QoreListNode> args(new QoreListNode(), m_xsink);
-        args->push(e);
+        ReferenceHolder<QoreListNode> args(new QoreListNode(autoTypeInfo), m_xsink);
+        args->push(e, m_xsink);
         callref->execValue(*args, m_xsink);
     }
 
