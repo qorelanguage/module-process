@@ -521,7 +521,7 @@ sub run_bg(Process p, Main m) {
     }
     catch (hash ex) {
         m.assertEq("PROCESS-WAIT-ERROR", ex.err, "process is killed from main thread - err");
-        m.assertEq("waitpid(2) failed: No child processes", ex.desc, "process is killed from main thread - desc");
+        m.assertEq(True, ex.desc.regex("No child processes"), ex.desc, "process is killed from main thread - desc");
     }
 }
 
