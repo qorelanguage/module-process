@@ -1,2 +1,10 @@
-this is an internal copy of boost 1.63 (required modules)
+this is an internal copy of boost 1.67 (required modules)
 It's used only when there is no system-wide boost available
+
+How to build it:
+- download latest boost tarball, unpack it
+- ./bootstrap.sh
+- ./b2 tools/bcp
+- ./dist/bin/bcp process ../tmp
+- copy content of tmp here
+
