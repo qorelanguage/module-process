@@ -14,7 +14,18 @@ DLLLOCAL extern const TypedHashDecl* hashdeclMemorySummaryInfo;
 #define PROCESS_CHECK(RET) if (!m_process) { xsink->raiseException("PROCESS-CHECK-ERROR", "Process is not initialized"); return (RET); }
 
 
+ProcessPriv::ProcessPriv()
+    : m_process(0),
+      m_asio_svc(),
+      m_in(m_asio_svc), m_out(m_asio_svc), m_err(m_asio_svc)
+{
+	// TODO: how async completion handlers can work here with Qore exceptions?
+//    boost::asio::async_read(m_asio_svc, m_out_buff);
+//    boost::asio::async_read(m_asio_svc, m_err_buff);
+}
+
 ProcessPriv::ProcessPriv(pid_t pid, ExceptionSink *xsink)
+    : ProcessPriv()
 {
     try {
         int i = boost::numeric_cast<int>(pid);
@@ -26,7 +37,7 @@ ProcessPriv::ProcessPriv(pid_t pid, ExceptionSink *xsink)
 }
 
 ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, const QoreHashNode *opts, ExceptionSink *xsink)
-    : m_process(0)
+    : ProcessPriv()
 {
     const ResolvedCallReferenceNode* on_success = optsExecutor("on_success", opts, xsink);
     const ResolvedCallReferenceNode* on_setup = optsExecutor("on_setup", opts, xsink);
@@ -262,8 +273,11 @@ bool ProcessPriv::wait(ExceptionSink *xsink) {
     PROCESS_CHECK(false)
 
     try {
-        if (m_process->valid())
+        if (m_process->valid()) {
+            m_asio_svc.run();
             m_process->wait();
+//            TODO: exceptions + completion handler?
+        }
         return true;
     }
     catch (const std::exception &ex) {
@@ -278,8 +292,10 @@ bool ProcessPriv::wait(int64 t, ExceptionSink *xsink)
     PROCESS_CHECK(false)
 
     try {
-        if (m_process->valid() && m_process->running())
+        if (m_process->valid() && m_process->running()) {
+            m_asio_svc.run();
             return m_process->wait_for(std::chrono::milliseconds(t));
+        }
         return false;
     }
     catch (const std::exception &ex) {
@@ -298,9 +314,11 @@ bool ProcessPriv::detach(ExceptionSink *xsink)
 
 QoreStringNode* ProcessPriv::readStderr()
 {
-    std::string line;
-    std::getline(m_err, line);
-    return new QoreStringNode(line);
+	// TODO: asio reimplementation + exception handling
+//    std::string line;
+//    std::getline(m_err, line);
+//    return new QoreStringNode(line);
+return 0;
 }
 
 QoreStringNode* ProcessPriv::readStderr(std::streamsize size, ExceptionSink* xsink)
@@ -308,7 +326,8 @@ QoreStringNode* ProcessPriv::readStderr(std::streamsize size, ExceptionSink* xsi
     std::string buff(size, '\0');
 
     try {
-        m_err.read(&buff[0], size);
+//        m_err.read(&buff[0], size);
+throw std::runtime_error("TODO: reimplement asio");
     }
     catch (const std::exception &ex) {
         xsink->raiseException("PROCESS-READ-ERROR", ex.what());
@@ -320,9 +339,11 @@ QoreStringNode* ProcessPriv::readStderr(std::streamsize size, ExceptionSink* xsi
 
 QoreStringNode* ProcessPriv::readStdout()
 {
-    std::string line;
-    std::getline(m_out, line);
-    return new QoreStringNode(line);
+	// TODO: asio reimplementation + exception handling
+//    std::string line;
+//    std::getline(m_out, line);
+//    return new QoreStringNode(line);
+return 0;
 }
 
 QoreStringNode* ProcessPriv::readStdout(std::streamsize size, ExceptionSink* xsink)
@@ -330,7 +351,8 @@ QoreStringNode* ProcessPriv::readStdout(std::streamsize size, ExceptionSink* xsi
     std::string buff(size, '\0');
 
     try {
-        m_out.read(&buff[0], size);
+//        m_out.read(&buff[0], size);
+        throw std::runtime_error("TODO: asio migration");
     }
     catch (const std::exception &ex) {
         xsink->raiseException("PROCESS-READ-ERROR", ex.what());
@@ -343,8 +365,9 @@ QoreStringNode* ProcessPriv::readStdout(std::streamsize size, ExceptionSink* xsi
 void ProcessPriv::write(std::string val, ExceptionSink *xsink)
 {
     try {
-        m_in.write(val.data(), val.size());
-        m_in.flush();
+        //m_in.write(val.data(), val.size());
+        //m_in.flush();
+        m_in.write_some(boost::asio::buffer(val, val.size()));// TODO: examine how to handle exceptions as it is async now. It should have some completion handled probably
     }
     catch (const std::invalid_argument& e) {
         xsink->raiseException("PROCESS-WRITE-EXCEPTION", e.what());

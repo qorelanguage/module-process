@@ -3,6 +3,7 @@
 
 #include <qore/Qore.h>
 #include <boost/process.hpp>
+#include <boost/asio.hpp>
 
 #include <unistd.h>
 
@@ -57,9 +58,18 @@ public:
 
 private:
     bp::child *m_process;
-    bp::opstream m_in;
-    bp::ipstream m_out;
-    bp::ipstream m_err;
+    boost::asio::io_service m_asio_svc;
+//    bp::opstream m_in;
+//    bp::ipstream m_out;
+//    bp::ipstream m_err;
+    bp::async_pipe m_in;
+    bp::async_pipe m_out;
+    bp::async_pipe m_err;
+
+    boost::asio::streambuf m_out_buff;
+    boost::asio::streambuf m_err_buff;
+
+    ProcessPriv();
 
     const ResolvedCallReferenceNode* optsExecutor(const char * name, const QoreHashNode *opts, ExceptionSink *xsink);
 
