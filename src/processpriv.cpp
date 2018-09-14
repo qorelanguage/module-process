@@ -19,9 +19,6 @@ ProcessPriv::ProcessPriv()
       m_asio_svc(),
       m_in(m_asio_svc), m_out(m_asio_svc), m_err(m_asio_svc)
 {
-	// TODO: how async completion handlers can work here with Qore exceptions?
-//    boost::asio::async_read(m_asio_svc, m_out_buff);
-//    boost::asio::async_read(m_asio_svc, m_err_buff);
 }
 
 ProcessPriv::ProcessPriv(pid_t pid, ExceptionSink *xsink)
@@ -86,6 +83,11 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
                                   bp::std_in < m_in,
 				  m_asio_svc
                                  );
+	m_out.async_read_some(m_out_buff,
+            [&](boost::system::error_code ec, size_t transferred) {
+              std::cout << "ReadLoop: " << ec.message() << " got " << transferred << " bytes\n";
+           });
+
 	m_asio_svc.run();
     }
     catch (const std::exception &ex) {
@@ -345,6 +347,8 @@ QoreStringNode* ProcessPriv::readStdout()
 //    std::string line;
 //    std::getline(m_out, line);
 //    return new QoreStringNode(line);
+//	boost::asio::streambuf buff;
+//m_out.read_some(buff);
 return 0;
 }
 
@@ -367,9 +371,7 @@ QoreStringNode* ProcessPriv::readStdout(std::streamsize size, ExceptionSink* xsi
 void ProcessPriv::write(std::string val, ExceptionSink *xsink)
 {
     try {
-        //m_in.write(val.data(), val.size());
-        //m_in.flush();
-        m_in.write_some(boost::asio::buffer(val, val.size()));// TODO: examine how to handle exceptions as it is async now. It should have some completion handled probably
+        m_in.write_some(boost::asio::buffer(val, val.size()));
     }
     catch (const std::invalid_argument& e) {
         xsink->raiseException("PROCESS-WRITE-EXCEPTION", e.what());
