@@ -83,8 +83,10 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
                                                     ),
                                   bp::std_out > m_out,
                                   bp::std_err > m_err,
-                                  bp::std_in < m_in
+                                  bp::std_in < m_in,
+				  m_asio_svc
                                  );
+	m_asio_svc.run();
     }
     catch (const std::exception &ex) {
         xsink->raiseException("PROCESS-CONSTRUCTOR-ERROR", ex.what());
@@ -274,7 +276,7 @@ bool ProcessPriv::wait(ExceptionSink *xsink) {
 
     try {
         if (m_process->valid()) {
-            m_asio_svc.run();
+//            m_asio_svc.run();
             m_process->wait();
 //            TODO: exceptions + completion handler?
         }
@@ -293,7 +295,7 @@ bool ProcessPriv::wait(int64 t, ExceptionSink *xsink)
 
     try {
         if (m_process->valid() && m_process->running()) {
-            m_asio_svc.run();
+//            m_asio_svc.run();
             return m_process->wait_for(std::chrono::milliseconds(t));
         }
         return false;
