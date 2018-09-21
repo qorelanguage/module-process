@@ -40,8 +40,6 @@ include(CheckCXXSymbolExists)
 check_cxx_symbol_exists(kill signal.h HAVE_KILL)
 
 set(CPP_SRC
-    src/qoreprocesshandler.h
-    src/processpriv.h
     src/processpriv.cpp
 )
 
