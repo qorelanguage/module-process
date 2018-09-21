@@ -1,8 +1,6 @@
 
 #include <qore/Qore.h>
 
-
-
 /** @mainpage %Qore %Process Module
 
     @tableofcontents
@@ -49,7 +47,7 @@ DLLLOCAL QoreClass* initProcessClass(QoreNamespace& ns);
 
 DLLLOCAL TypedHashDecl* init_hashdecl_MemorySummaryInfo(QoreNamespace& ns);
 
-QoreStringNode * process_module_init() {
+QoreStringNode* process_module_init() {
     hashdeclMemorySummaryInfo = init_hashdecl_MemorySummaryInfo(ProcessNS);
 
     ProcessNS.addSystemClass(initProcessClass(ProcessNS));
@@ -57,7 +55,7 @@ QoreStringNode * process_module_init() {
     return 0;
 }
 
-void process_module_ns_init(QoreNamespace *rns, QoreNamespace *qns) {
+void process_module_ns_init(QoreNamespace* rns, QoreNamespace* qns) {
     qns->addNamespace(ProcessNS.copy());
 }
 
@@ -78,4 +76,3 @@ DLLEXPORT qore_module_init_t qore_module_init = process_module_init;
 DLLEXPORT qore_module_ns_init_t qore_module_ns_init = process_module_ns_init;
 DLLEXPORT qore_module_delete_t qore_module_delete = process_module_delete;
 DLLEXPORT qore_license_t qore_module_license = QL_LGPL;
-

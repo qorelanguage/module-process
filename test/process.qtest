@@ -24,7 +24,7 @@ public class Main inherits QUnit::Test {
             ),
             "LINUX" : (
                 "searchPathTest_in" : "ls",
-                "searchPathTest_out" : "/usr/bin/ls",
+                "searchPathTest_out" : "^(/usr)?/bin/ls$",
                 "simpleTest_exe" : "ls",
                 "simpleTest_arg" : ("-l" , "-s",),
                 "executorsTest_success" : "Success",
@@ -100,7 +100,7 @@ public class Main inherits QUnit::Test {
 
     searchPathTest() {
         any s = Process::searchPath(getTestValue("searchPathTest_in"));
-        assertEq(getTestValue("searchPathTest_out"), s, sprintf("searchPath for %s", getTestValue("searchPathTest_in")));
+        assertRegex(getTestValue("searchPathTest_out"), s, sprintf("searchPath for %s", getTestValue("searchPathTest_in")));
 
         try {
             Process::searchPath("some-not-existing-exec");
@@ -312,7 +312,7 @@ public class Main inherits QUnit::Test {
         assertEq("ex", b2, "byte 2 stdout read test");
 
         int ix = 0;
-        while (string e = p.readStdout(-1)) {
+        while (string e = p.readStdout(1000)) {
             have_stdout = True;
             string msg = sprintf("my error %d", ix);
             assertEq(str.substr(3), e, "stdout text "+ix);
@@ -325,7 +325,7 @@ public class Main inherits QUnit::Test {
         assertEq("23", b2, "byte 2 stderr read test");
 
         ix = 0;
-        while (string e = p.readStderr()) {
+        while (string e = p.readStderr(1000)) {
             have_stderr = True;
             string msg = sprintf("my error %d", ix);
             assertEq(msg, e, "stderr text "+ix);
@@ -405,7 +405,7 @@ public class Main inherits QUnit::Test {
                 "path" : ( m_prefix, ),
             );
         Process p("test_cwd.q", opts);
-        while (*string e = p.readStdout()) {
+        while (*string e = p.readStdout(100)) {
             assertEq(opts.cwd, e, "cwd value read from stdout");
         }
         p.wait();
