@@ -78,7 +78,7 @@ public:
 #else
         e->setKeyValue("pid", exec.proc_info.dwProcessId, m_xsink);
 #endif
-        e->setKeyValue("exit", (int64)*(exec.exit_status), m_xsink);
+        e->setKeyValue("exit", static_cast<int64>(*(exec.exit_status)), m_xsink);
         // std::error_code& ec to hash too
         e->setKeyValue("error_code", ec.value(), m_xsink);
         e->setKeyValue("error_message", new QoreStringNode(ec.message()), m_xsink);

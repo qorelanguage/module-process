@@ -158,8 +158,7 @@ private:
 
             // return immediately if there is no data
             if (m_buf.size() == 0)
-                //return 0;
-                m_cv.wait(lock, [this]{ return m_buf.size() > 0; });
+                return 0;
 
             return doRead(dest, n);
         }

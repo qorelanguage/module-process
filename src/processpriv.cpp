@@ -17,7 +17,7 @@ DLLLOCAL extern const TypedHashDecl* hashdeclMemorySummaryInfo;
 
 #define PROCESS_CHECK(RET) if (!m_process) { xsink->raiseException("PROCESS-CHECK-ERROR", "Process is not initialized"); return (RET); }
 
-#define PROCESS_CHECK_NO_RET if (!m_process) { xsink->raiseException("PROCESS-CHECK-ERROR", "Process is not initialized"); }
+#define PROCESS_CHECK_NO_RET if (!m_process) { xsink->raiseException("PROCESS-CHECK-ERROR", "Process is not initialized"); return; }
 
 
 ProcessPriv::ProcessPriv(pid_t pid, ExceptionSink* xsink) :
@@ -76,30 +76,41 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
     m_on_stdout_complete = [this](const boost::system::error_code& ec, size_t n)
     {
         // TODO handle ec properly
+        //boost::system::error_condition cond = ec.default_error_condition();
+        //fprintf(stderr, "stdout: n=%ld, ecval=%d, ecmsg='%s', eccat='%s', econdv=%d, econdmsg='%s'\n", n, ec.value(), ec.message(), ec.category().name(), cond.value(), cond.message());
 
         m_out_buf.append(m_out_vec.data(), n);
 
         // continue reading if no error
         if (!ec) {
+            //fprintf(stderr, "stdout: ec ok -> new async_read\n");
             boost::asio::async_read(m_out_pipe, m_out_asiobuf, m_on_stdout_complete);
         }
+        //fprintf(stderr, "stdout: read finished\n");
     };
 
     // stderr setup
     m_on_stderr_complete = [this](const boost::system::error_code& ec, size_t n)
     {
         // TODO handle ec properly
+        //boost::system::error_condition cond = ec.default_error_condition();
+        //fprintf(stderr, "stderr: n=%ld, ecval=%d, ecmsg='%s', eccat='%s', econdv=%d, econdmsg='%s'\n", n, ec.value(), ec.message(), ec.category().name(), cond.value(), cond.message());
 
         m_err_buf.append(m_err_vec.data(), n);
 
         // continue reading if no error
         if (!ec) {
+            //fprintf(stderr, "stderr: ec ok -> new async_read\n");
             boost::asio::async_read(m_err_pipe, m_err_asiobuf, m_on_stderr_complete);
         }
+
+        //fprintf(stderr, "stderr: read finished\n");
     };
 
     // stdin setup
     m_on_stdin_complete = [this](const boost::system::error_code& ec, size_t n) {
+        //boost::system::error_condition cond = ec.default_error_condition();
+        //fprintf(stderr, "stdin: n=%ld, ecval=%d, ecmsg='%s', eccat='%s', econdv=%d, econdmsg='%s'\n", n, ec.value(), ec.message(), ec.category().name(), cond.value(), cond.message());
         // TODO handle ec properly
 
         std::lock_guard<std::mutex> lock(m_async_write_mtx);
@@ -110,9 +121,6 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
             boost::asio::async_write(m_in_pipe, m_in_asiobuf, m_on_stdin_complete);
             return;
         }
-
-        // commented out because it's probably not necessary
-        //m_in_pipe.async_close(); // tells the child we have no more data
 
         --m_async_write_running;
     };
