@@ -4,7 +4,7 @@
 #include <boost/process.hpp>
 #include <boost/process/extend.hpp>
 
-#include "qore/Qore.h"
+#include <qore/Qore.h>
 
 namespace bp = boost::process;
 namespace ex = boost::process::extend;

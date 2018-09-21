@@ -252,7 +252,7 @@ bool Process::valid() {
 
 //! Check if the child process is running.
 /**
-    @return \cTrue if the child is running
+    @return \c True if the child is running
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
 
