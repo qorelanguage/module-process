@@ -13,50 +13,50 @@ namespace ex = boost::process::extend;
 class QoreProcessHandler : public ex::handler {
 public:
     QoreProcessHandler(ExceptionSink* xsink,
-                       const ResolvedCallReferenceNode* on_success,
-                       const ResolvedCallReferenceNode* on_setup,
-                       const ResolvedCallReferenceNode* on_error,
-                       const ResolvedCallReferenceNode* on_fork_error,
-                       const ResolvedCallReferenceNode* on_exec_setup,
-                       const ResolvedCallReferenceNode* on_exec_error) :
+                       ResolvedCallReferenceNode* on_success,
+                       ResolvedCallReferenceNode* on_setup,
+                       ResolvedCallReferenceNode* on_error,
+                       ResolvedCallReferenceNode* on_fork_error,
+                       ResolvedCallReferenceNode* on_exec_setup,
+                       ResolvedCallReferenceNode* on_exec_error) :
         m_xsink(xsink),
-        m_on_success(on_success),
-        m_on_setup(on_setup),
-        m_on_error(on_error),
-        m_on_fork_error(on_fork_error),
-        m_on_exec_setup(on_exec_setup),
-        m_on_exec_error(on_exec_error)
+        m_on_success(on_success, xsink),
+        m_on_setup(on_setup, xsink),
+        m_on_error(on_error, xsink),
+        m_on_fork_error(on_fork_error, xsink),
+        m_on_exec_setup(on_exec_setup, xsink),
+        m_on_exec_error(on_exec_error, xsink)
     {
     }
 
     template<typename Executor>
     void on_success(Executor& exec) const {
-        call("on_success", m_on_success, exec, std::error_code());
+        call("on_success", *m_on_success, exec, std::error_code());
     }
 
     template<typename Executor>
     void on_setup(Executor& exec) const {
-        call("on_setup", m_on_setup, exec, std::error_code());
+        call("on_setup", *m_on_setup, exec, std::error_code());
     }
 
     template<typename Executor>
     void on_error(Executor& exec, const std::error_code& ec) const {
-        call("on_error", m_on_error, exec, ec);
+        call("on_error", *m_on_error, exec, ec);
     }
 
     template<typename Executor>
     void on_fork_error(Executor& exec, const std::error_code& ec) const {
-        call("on_fork_error", m_on_fork_error, exec, ec);
+        call("on_fork_error", *m_on_fork_error, exec, ec);
     }
 
     template<typename Executor>
     void on_exec_setup(Executor& exec) const {
-        call("on_exec_setup", m_on_exec_setup, exec, std::error_code());
+        call("on_exec_setup", *m_on_exec_setup, exec, std::error_code());
     }
 
     template<typename Executor>
     void on_exec_error(Executor& exec, const std::error_code& ec) const {
-        call("on_exec_error", m_on_exec_error, exec, ec);
+        call("on_exec_error", *m_on_exec_error, exec, ec);
     }
 
     template<typename Executor>
@@ -92,12 +92,12 @@ public:
 private:
     ExceptionSink* m_xsink;
 
-    const ResolvedCallReferenceNode* m_on_success;
-    const ResolvedCallReferenceNode* m_on_setup;
-    const ResolvedCallReferenceNode* m_on_error;
-    const ResolvedCallReferenceNode* m_on_fork_error;
-    const ResolvedCallReferenceNode* m_on_exec_setup;
-    const ResolvedCallReferenceNode* m_on_exec_error;
+    ReferenceHolder<ResolvedCallReferenceNode> m_on_success;
+    ReferenceHolder<ResolvedCallReferenceNode> m_on_setup;
+    ReferenceHolder<ResolvedCallReferenceNode> m_on_error;
+    ReferenceHolder<ResolvedCallReferenceNode> m_on_fork_error;
+    ReferenceHolder<ResolvedCallReferenceNode> m_on_exec_setup;
+    ReferenceHolder<ResolvedCallReferenceNode> m_on_exec_error;
 };
 
 #endif

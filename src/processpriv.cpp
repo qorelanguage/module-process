@@ -45,19 +45,25 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
     m_in_pipe(m_asio_ctx),
     m_out_pipe(m_asio_ctx),
     m_err_pipe(m_asio_ctx),
-    m_out_vec(4096),
-    m_err_vec(4096),
+
+    // Using 1-byte buffers here because otherwise the async_read operations
+    // block until the buffer is filled. This is obviously not good for performance
+    // and ideally 4k buffers or similar would be used, but that is not possible
+    // to do in this case.
+    m_out_vec(1),
+    m_err_vec(1),
+
     m_in_asiobuf(boost::asio::buffer(m_in_vec)),
     m_out_asiobuf(boost::asio::buffer(m_out_vec)),
     m_err_asiobuf(boost::asio::buffer(m_err_vec))
 {
     // get handler pointers
-    const ResolvedCallReferenceNode* on_success = optsExecutor("on_success", opts, xsink);
-    const ResolvedCallReferenceNode* on_setup = optsExecutor("on_setup", opts, xsink);
-    const ResolvedCallReferenceNode* on_error = optsExecutor("on_error", opts, xsink);
-    const ResolvedCallReferenceNode* on_fork_error = optsExecutor("on_fork_error", opts, xsink);
-    const ResolvedCallReferenceNode* on_exec_setup = optsExecutor("on_exec_setup", opts, xsink);
-    const ResolvedCallReferenceNode* on_exec_error = optsExecutor("on_exec_error", opts, xsink);
+    ResolvedCallReferenceNode* on_success = optsExecutor("on_success", opts, xsink);
+    ResolvedCallReferenceNode* on_setup = optsExecutor("on_setup", opts, xsink);
+    ResolvedCallReferenceNode* on_error = optsExecutor("on_error", opts, xsink);
+    ResolvedCallReferenceNode* on_fork_error = optsExecutor("on_fork_error", opts, xsink);
+    ResolvedCallReferenceNode* on_exec_setup = optsExecutor("on_exec_setup", opts, xsink);
+    ResolvedCallReferenceNode* on_exec_error = optsExecutor("on_exec_error", opts, xsink);
 
     // parse options
     bp::environment e = optsEnv(opts, xsink);
@@ -156,13 +162,24 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
 }
 
 ProcessPriv::~ProcessPriv() {
+    // make sure the asio context is stopped
+    m_asio_ctx.stop();
+    while (!m_asio_ctx.stopped()) {
+        qore_usleep(1000);
+    }
+
+    // wait for future
+    if (m_asio_ctx_run_future.valid())
+        m_asio_ctx_run_future.get();
+
+    // delete child process
     if (m_process)
         delete m_process;
     m_process = nullptr;
 }
 
-const ResolvedCallReferenceNode* ProcessPriv::optsExecutor(const char* name, const QoreHashNode* oh, ExceptionSink* xsink) {
-    const ResolvedCallReferenceNode* ret = nullptr;
+ResolvedCallReferenceNode* ProcessPriv::optsExecutor(const char* name, const QoreHashNode* oh, ExceptionSink* xsink) {
+    ResolvedCallReferenceNode* ret = nullptr;
 
     if (oh) {
         if (oh->existsKey(name)) {
@@ -177,8 +194,8 @@ const ResolvedCallReferenceNode* ProcessPriv::optsExecutor(const char* name, con
                 return ret;
             }
 
-            // TODO/FIXME: should I increase ref count here?
-            ret = n.get<const ResolvedCallReferenceNode>();
+            ret = n.get<ResolvedCallReferenceNode>();
+            ret->refSelf();
         }
     }
 

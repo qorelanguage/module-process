@@ -77,7 +77,7 @@ public:
     DLLLOCAL static void waitForTermination(int pid, ExceptionSink* xsink);
 
 private:
-    const ResolvedCallReferenceNode* optsExecutor(const char* name, const QoreHashNode* opts, ExceptionSink* xsink);
+    ResolvedCallReferenceNode* optsExecutor(const char* name, const QoreHashNode* opts, ExceptionSink* xsink);
 
     bp::environment optsEnv(const QoreHashNode* opts, ExceptionSink* xsink);
     const char* optsCwd(const QoreHashNode* opts, ExceptionSink* xsink);
