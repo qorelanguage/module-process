@@ -79,49 +79,48 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
     processArgs(arguments, a);
 
     // stdout setup
-    m_on_stdout_complete = [this](const boost::system::error_code& ec, size_t n)
-    {
-        // TODO handle ec properly
-        //boost::system::error_condition cond = ec.default_error_condition();
-        //fprintf(stderr, "stdout: n=%ld, ecval=%d, ecmsg='%s', eccat='%s', econdv=%d, econdmsg='%s'\n", n, ec.value(), ec.message(), ec.category().name(), cond.value(), cond.message());
-
+    m_on_stdout_complete = [this](const boost::system::error_code& ec, size_t n) {
+        // append read data to output buffer
         m_out_buf.append(m_out_vec.data(), n);
 
         // continue reading if no error
         if (!ec) {
-            //fprintf(stderr, "stdout: ec ok -> new async_read\n");
             boost::asio::async_read(m_out_pipe, m_out_asiobuf, m_on_stdout_complete);
         }
-        //fprintf(stderr, "stdout: read finished\n");
     };
 
     // stderr setup
-    m_on_stderr_complete = [this](const boost::system::error_code& ec, size_t n)
-    {
-        // TODO handle ec properly
-        //boost::system::error_condition cond = ec.default_error_condition();
-        //fprintf(stderr, "stderr: n=%ld, ecval=%d, ecmsg='%s', eccat='%s', econdv=%d, econdmsg='%s'\n", n, ec.value(), ec.message(), ec.category().name(), cond.value(), cond.message());
-
+    m_on_stderr_complete = [this](const boost::system::error_code& ec, size_t n) {
+        // append read data to output buffer
         m_err_buf.append(m_err_vec.data(), n);
 
         // continue reading if no error
         if (!ec) {
-            //fprintf(stderr, "stderr: ec ok -> new async_read\n");
             boost::asio::async_read(m_err_pipe, m_err_asiobuf, m_on_stderr_complete);
         }
-
-        //fprintf(stderr, "stderr: read finished\n");
     };
 
     // stdin setup
     m_on_stdin_complete = [this](const boost::system::error_code& ec, size_t n) {
-        //boost::system::error_condition cond = ec.default_error_condition();
-        //fprintf(stderr, "stdin: n=%ld, ecval=%d, ecmsg='%s', eccat='%s', econdv=%d, econdmsg='%s'\n", n, ec.value(), ec.message(), ec.category().name(), cond.value(), cond.message());
-        // TODO handle ec properly
-
         std::lock_guard<std::mutex> lock(m_async_write_mtx);
 
-        // check if there is more data
+        // delete already written data from stdin vector
+        m_in_vec.erase(m_in_vec.begin(), m_in_vec.begin() + n);
+
+        // check error
+        if (ec) {
+            --m_async_write_running;
+            return;
+        }
+
+        // if there is remaining data, try to write it
+        if (m_in_vec.size()) {
+            m_in_asiobuf = boost::asio::buffer(m_in_vec);
+            boost::asio::async_write(m_in_pipe, m_in_asiobuf, m_on_stdin_complete);
+            return;
+        }
+
+        // check if there is new data ready to be written
         if (m_in_buf.size()) {
             prepareStdinBuffer();
             boost::asio::async_write(m_in_pipe, m_in_asiobuf, m_on_stdin_complete);
