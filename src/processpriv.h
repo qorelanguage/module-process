@@ -148,7 +148,7 @@ private:
             m_cv.notify_all();
         }
 
-        //! Read from the buffer and return instantly if there is no data.
+        //! Read from the buffer and return instantly if there is no data. Does not add null character at the end.
         size_t read(char* dest, size_t n) {
             if (!dest || !n)
                 return 0;
@@ -163,8 +163,43 @@ private:
             return doRead(dest, n);
         }
 
-        //! Read from the buffer and return if there is no data after timeout period.
+        //! Read from the buffer to a Qore string and return instantly if there is no data.
+        size_t read(QoreString* dest, size_t n) {
+            if (!dest || !n)
+                return 0;
+
+            //std::lock_guard<std::mutex> lock(m_mutex);
+            std::unique_lock<std::mutex> lock(m_mtx);
+
+            // return immediately if there is no data
+            if (m_buf.size() == 0)
+                return 0;
+
+            return doRead(dest, n);
+        }
+
+        //! Read from the buffer and return if there is no data after timeout period. Does not add null character at the end.
         size_t readTimeout(char* dest, size_t n, int64 millis) {
+            if (!dest || !n)
+                return 0;
+
+            auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(millis);
+            std::unique_lock<std::mutex> lock(m_mtx);
+
+            // wait if there is no data
+            if (m_buf.size() == 0) {
+                m_cv.wait_until(lock, until, [this]{ return m_buf.size() > 0; });
+
+                // return if there is still no data after timeout
+                if (m_buf.size() == 0)
+                    return 0;
+            }
+
+            return doRead(dest, n);
+        }
+
+        //! Read from the buffer and return if there is no data after timeout period.
+        size_t readTimeout(QoreString* dest, size_t n, int64 millis) {
             if (!dest || !n)
                 return 0;
 
@@ -209,6 +244,17 @@ private:
                 n = m_buf.size();
 
             m_buf.copy(dest, n, 0);
+            m_buf.erase(0, n);
+            return n;
+        }
+
+        //! Read data from buffer in to the destination Qore string. Expects that mutex is locked.
+        size_t doRead(QoreString* dest, size_t n) {
+            // fix the read size
+            if (m_buf.size() < n)
+                n = m_buf.size();
+            
+            dest->concat(m_buf.c_str(), n);
             m_buf.erase(0, n);
             return n;
         }

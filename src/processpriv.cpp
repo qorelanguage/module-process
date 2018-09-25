@@ -424,19 +424,17 @@ QoreValue ProcessPriv::readStderr(size_t n, ExceptionSink* xsink) {
     if (n <= 0)
         return QoreValue();
 
-    char* buf = (char*) malloc((n+1) * sizeof(char));
     try {
-        size_t read = m_err_buf.read(buf, n);
-        if (read) {
-            buf[read] = '\0';
-            return new QoreStringNode(buf, read, n+1, QCS_DEFAULT);
-        }
+        SimpleRefHolder<QoreStringNode> str(new QoreStringNode);
+        size_t read = m_err_buf.read(*str, n);
+        if (read)
+            return str.release();
     }
     catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-READ-ERROR", ex.what());
     }
 
-    free(buf);
+    //free(buf);
     return QoreValue();
 }
 
@@ -447,19 +445,16 @@ QoreValue ProcessPriv::readStderrTimeout(size_t n, int64 millis, ExceptionSink* 
     if (n <= 0)
         return QoreValue();
 
-    char* buf = (char*) malloc((n+1) * sizeof(char));
     try {
-        size_t read = m_err_buf.readTimeout(buf, n, millis);
-        if (read) {
-            buf[read] = '\0';
-            return new QoreStringNode(buf, read, n+1, QCS_DEFAULT);
-        }
+        SimpleRefHolder<QoreStringNode> str(new QoreStringNode);
+        size_t read = m_err_buf.readTimeout(*str, n, millis);
+        if (read)
+            return str.release();
     }
     catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-READ-ERROR", ex.what());
     }
 
-    free(buf);
     return QoreValue();
 }
 
@@ -470,19 +465,16 @@ QoreValue ProcessPriv::readStdout(size_t n, ExceptionSink* xsink) {
     if (n <= 0)
         return QoreValue();
 
-    char* buf = (char*) malloc((n+1) * sizeof(char));
     try {
-        size_t read = m_out_buf.read(buf, n);
-        if (read) {
-            buf[read] = '\0';
-            return new QoreStringNode(buf, read, n+1, QCS_DEFAULT);
-        }
+        SimpleRefHolder<QoreStringNode> str(new QoreStringNode);
+        size_t read = m_out_buf.read(*str, n);
+        if (read)
+            return str.release();
     }
     catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-READ-ERROR", ex.what());
     }
 
-    free(buf);
     return QoreValue();
 }
 
@@ -493,19 +485,16 @@ QoreValue ProcessPriv::readStdoutTimeout(size_t n, int64 millis, ExceptionSink* 
     if (n <= 0)
         return QoreValue();
 
-    char* buf = (char*) malloc((n+1) * sizeof(char));
     try {
-        size_t read = m_out_buf.readTimeout(buf, n, millis);
-        if (read) {
-            buf[read] = '\0';
-            return new QoreStringNode(buf, read, n+1, QCS_DEFAULT);
-        }
+        SimpleRefHolder<QoreStringNode> str(new QoreStringNode);
+        size_t read = m_out_buf.readTimeout(*str, n, millis);
+        if (read)
+            return str.release();
     }
     catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-READ-ERROR", ex.what());
     }
 
-    free(buf);
     return QoreValue();
 }
 
