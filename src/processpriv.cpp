@@ -163,9 +163,7 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
 ProcessPriv::~ProcessPriv() {
     // make sure the asio context is stopped
     m_asio_ctx.stop();
-    while (!m_asio_ctx.stopped()) {
-        qore_usleep(1000);
-    }
+    m_asio_ctx.run();
 
     // wait for future
     if (m_asio_ctx_run_future.valid())
