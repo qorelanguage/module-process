@@ -455,12 +455,13 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoLinux(int pid, ExceptionSink* xsi
 
         // get end of inode
         pos1 = l.find(' ', ++pos);
-        assert(pos1 != -1);
-        {
+        // issue #3018: only check inode field if it exists
+        if (pos1 != -1) {
             QoreString num(l.c_str() + pos, pos1 - pos);
             // skip mmap()'ed entries with a non-zero inode value
-            if (num.toBigInt())
+            if (num.toBigInt()) {
                 continue;
+            }
         }
 
         priv_size += (end - start);
