@@ -2,6 +2,8 @@
 
 #include "processpriv.h"
 
+#include <cstdlib>
+
 #if defined(__linux__) || (defined(__APPLE__) && defined(__MACH__))
 #define HAVE_PROCESS_GETMEMORYINFO 1
 #define HAVE_PROCESS_CHECKPID 1
@@ -521,4 +523,32 @@ static nothing Process::terminate(int pid) {
 */
 static nothing Process::waitForTermination(int pid) {
     ProcessPriv::waitForTermination(pid, xsink);
+}
+
+//! returns a list of three CPU load average values, giving the load average in the last 1, 5, and 15 minutes
+/** @par Example:
+    @code{.py}
+list<float> l = Process::getLoadAvg();
+printf("load in the last minute was: %y\n", l[0]);
+    @endcode
+
+    @return a list of three CPU load average values, giving the load average in the last 1, 5, and 15 minutes
+
+    @throw PROCESS-GETLOADAVG-ERROR an error occurred calling getloadavg()
+*/
+static list<float> Process::getLoadAvg() [flags=RET_VALUE_ONLY] {
+    double loadavg[3];
+
+    int rc = getloadavg(loadavg, 3);
+    if (rc != 3) {
+        xsink->raiseException("PROCESS-GETLOADAVG-ERROR", "an error occurred calling getloadavg()");
+        return QoreValue();
+    }
+
+    ReferenceHolder<QoreListNode> rv(new QoreListNode(floatTypeInfo), xsink);
+    for (unsigned i = 0; i < 3; ++i) {
+        rv->push(loadavg[i], xsink);
+        assert(!*xsink);
+    }
+    return rv.release();
 }
