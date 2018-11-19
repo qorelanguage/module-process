@@ -53,6 +53,7 @@ public class Main inherits QUnit::Test {
 
         addTestCase("SearchPath test", \searchPathTest());
         addTestCase("Absolute test", \absoluteTest());
+        addTestCase("loadavg test", \loadAvgTest());
         addTestCase("Constructor test", \constructorTest());
         addTestCase("Simple test", \simpleTest());
         addTestCase("Single test negative", \simpleTestNegative());
@@ -81,7 +82,7 @@ public class Main inherits QUnit::Test {
         return m_prefix;
     }
 
-    any getTestValue(string key) {
+    auto getTestValue(string key) {
         string os = Qore::PlatformOS.upr();
         if (!m_test_paths.hasKey(os)) {
             throw "MISSING-TEST-SETUP", sprintf("There is no TEST_PATHS setup for OS: %s, known OSes: %n", os, m_test_paths.keys());
@@ -92,6 +93,14 @@ public class Main inherits QUnit::Test {
         }
 
         return m_test_paths{os}{key} ?? m_test_paths.DEFAULT{key};
+    }
+
+    loadAvgTest() {
+        list<float> l = Process::getLoadAvg();
+        assertEq(3, l.size());
+        assertEq(Type::Float, l[0].type());
+        assertEq(Type::Float, l[1].type());
+        assertEq(Type::Float, l[2].type());
     }
 
     globalSetUp() {
