@@ -150,7 +150,7 @@ private:
         DLLLOCAL OutputBuffer& operator=(OutputBuffer&& other) = delete;
         DLLLOCAL OutputBuffer& operator=(const OutputBuffer& other) = delete;
         DLLLOCAL ~OutputBuffer() {
-            m_cv.notify_all();
+            m_timeout_sync.notify_all();
         }
 
         //! Read from the buffer and return instantly if there is no data. Does not add null character at the end.
@@ -193,7 +193,7 @@ private:
 
             // wait if there is no data
             if (m_buf.size() == 0) {
-                m_cv.wait_until(lock, until, [this]{ return m_buf.size() > 0; });
+                m_timeout_sync.wait_until(lock, until, [this]{ return m_buf.size() > 0; });
 
                 // return if there is still no data after timeout
                 if (m_buf.size() == 0)
@@ -213,7 +213,7 @@ private:
 
             // wait if there is no data
             if (m_buf.size() == 0) {
-                m_cv.wait_until(lock, until, [this]{ return m_buf.size() > 0; });
+                m_timeout_sync.wait_until(lock, until, [this]{ return m_buf.size() > 0; });
 
                 // return if there is still no data after timeout
                 if (m_buf.size() == 0)
@@ -234,12 +234,12 @@ private:
             }
 
             // notify outside of the lock
-            m_cv.notify_all();
+            m_timeout_sync.notify_all();
         }
 
     private:
         std::mutex m_mtx;
-        std::condition_variable m_cv;
+        std::condition_variable m_timeout_sync;
         std::string m_buf;
 
         //! Read data from buffer in to the destination. Expects that mutex is locked.
