@@ -15,9 +15,10 @@ namespace ex = boost::process::extend;
 
 DLLLOCAL extern const TypedHashDecl* hashdeclMemorySummaryInfo;
 
-#define PROCESS_CHECK(RET) if (!m_process) { xsink->raiseException("PROCESS-CHECK-ERROR", "Process is not initialized"); return (RET); }
-
-#define PROCESS_CHECK_NO_RET if (!m_process) { xsink->raiseException("PROCESS-CHECK-ERROR", "Process is not initialized"); return; }
+DLLLOCAL void processCheckError(ExceptionSink* xsink) {
+    if (xsink)
+        xsink->raiseException("PROCESS-CHECK-ERROR", "Process is not initialized");
+}
 
 
 ProcessPriv::ProcessPriv(pid_t pid, ExceptionSink* xsink) :
@@ -66,17 +67,20 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
     ResolvedCallReferenceNode* on_exec_error = optsExecutor("on_exec_error", opts, xsink);
 
     // parse options
-    bp::environment e = optsEnv(opts, xsink);
+    bp::environment env = optsEnv(opts, xsink);
     boost::filesystem::path p = optsPath(command, opts, xsink);
-    const char* cwd = optsCwd(opts, xsink);
+    std::string cwd = std::move(optsCwd(opts, xsink));
 
     if (xsink->isException()) {
         return;
     }
 
     // process exe arguments
-    std::vector<std::string> a;
-    processArgs(arguments, a);
+    std::vector<std::string> exeArgs;
+    processArgs(arguments, exeArgs);
+    if (exeArgs.size() == 0) { // make sure that there is at least one argument
+        exeArgs.push_back("");
+    }
 
     // stdout setup
     m_on_stdout_complete = [this](const boost::system::error_code& ec, size_t n) {
@@ -133,9 +137,9 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
     // launch child process
     try {
         m_process = new bp::child(bp::exe = p.string(),
-                                  bp::args = a,
-                                  bp::env = e,
-                                  bp::start_dir = cwd,
+                                  bp::args = exeArgs,
+                                  bp::env = env,
+                                  bp::start_dir = cwd.c_str(),
                                   QoreProcessHandler(xsink,
                                                      on_success,
                                                      on_setup,
@@ -229,8 +233,8 @@ bp::environment ProcessPriv::optsEnv(const QoreHashNode *opts, ExceptionSink* xs
     }
 }
 
-const char* ProcessPriv::optsCwd(const QoreHashNode *opts, ExceptionSink* xsink) {
-    const char* ret = ".";
+std::string ProcessPriv::optsCwd(const QoreHashNode *opts, ExceptionSink* xsink) {
+    std::string ret(".");
 
     if (opts && opts->existsKey("cwd")) {
         QoreValue n = opts->getKeyValue("cwd");
@@ -263,7 +267,7 @@ boost::filesystem::path ProcessPriv::optsPath(const char* command, const QoreHas
             return ret;
         }
 
-        const QoreListNode *l = n.get<const QoreListNode>();
+        const QoreListNode* l = n.get<const QoreListNode>();
         std::vector<boost::filesystem::path> paths;
 
         for (qore_size_t i = 0; i < l->size(); i++) {
@@ -290,14 +294,12 @@ boost::filesystem::path ProcessPriv::optsPath(const char* command, const QoreHas
 }
 
 void ProcessPriv::processArgs(const QoreListNode* arguments, std::vector<std::string>& out) {
-    if (arguments) {
-        for (qore_size_t i = 0; i < arguments->size(); i++) {
-            QoreStringNodeValueHelper s(arguments->retrieveEntry(i));
-            out.push_back(s->getBuffer());
-        }
-    }
-    else {
-        out.push_back(""); // just a dummy argument to get it working inside child()
+    if (!arguments)
+        return;
+
+    for (qore_size_t i = 0; i < arguments->size(); i++) {
+        QoreStringNodeValueHelper s(arguments->retrieveEntry(i));
+        out.push_back(s->getBuffer());
     }
 }
 
@@ -310,7 +312,10 @@ void ProcessPriv::prepareStdinBuffer() {
 }
 
 int ProcessPriv::exitCode(ExceptionSink* xsink) {
-    PROCESS_CHECK(-1)
+    if (!m_process) {
+        processCheckError(xsink);
+        return -1;
+    }
 
     try {
         return m_process->exit_code();
@@ -323,7 +328,10 @@ int ProcessPriv::exitCode(ExceptionSink* xsink) {
 }
 
 int ProcessPriv::id(ExceptionSink* xsink) {
-    PROCESS_CHECK(-1)
+    if (!m_process) {
+        processCheckError(xsink);
+        return -1;
+    }
 
     try {
         return m_process->id();
@@ -336,7 +344,10 @@ int ProcessPriv::id(ExceptionSink* xsink) {
 }
 
 bool ProcessPriv::valid(ExceptionSink* xsink) {
-    PROCESS_CHECK(false)
+    if (!m_process) {
+        processCheckError(xsink);
+        return false;
+    }
 
     try {
         return m_process->valid();
@@ -349,7 +360,10 @@ bool ProcessPriv::valid(ExceptionSink* xsink) {
 }
 
 bool ProcessPriv::running(ExceptionSink* xsink) {
-    PROCESS_CHECK(false)
+    if (!m_process) {
+        processCheckError(xsink);
+        return false;
+    }
 
     try {
         return m_process->running();
@@ -362,7 +376,10 @@ bool ProcessPriv::running(ExceptionSink* xsink) {
 }
 
 bool ProcessPriv::wait(ExceptionSink* xsink) {
-    PROCESS_CHECK(false)
+    if (!m_process) {
+        processCheckError(xsink);
+        return false;
+    }
 
     try {
         if (m_process->valid()) {
@@ -379,7 +396,10 @@ bool ProcessPriv::wait(ExceptionSink* xsink) {
 }
 
 bool ProcessPriv::wait(int64 t, ExceptionSink* xsink) {
-    PROCESS_CHECK(false)
+    if (!m_process) {
+        processCheckError(xsink);
+        return false;
+    }
 
     try {
         if (m_process->valid() && m_process->running()) {
@@ -395,13 +415,20 @@ bool ProcessPriv::wait(int64 t, ExceptionSink* xsink) {
 }
 
 bool ProcessPriv::detach(ExceptionSink* xsink) {
-    PROCESS_CHECK(false);
+    if (!m_process) {
+        processCheckError(xsink);
+        return false;
+    }
+
     m_process->detach();
     return true;
 }
 
 bool ProcessPriv::terminate(ExceptionSink* xsink) {
-    PROCESS_CHECK(false)
+    if (!m_process) {
+        processCheckError(xsink);
+        return false;
+    }
 
     try {
         m_process->terminate();
@@ -415,7 +442,10 @@ bool ProcessPriv::terminate(ExceptionSink* xsink) {
 }
 
 QoreValue ProcessPriv::readStderr(size_t n, ExceptionSink* xsink) {
-    PROCESS_CHECK(QoreValue())
+    if (!m_process) {
+        processCheckError(xsink);
+        return QoreValue();
+    }
 
     // check size to read
     if (n <= 0)
@@ -436,7 +466,10 @@ QoreValue ProcessPriv::readStderr(size_t n, ExceptionSink* xsink) {
 }
 
 QoreValue ProcessPriv::readStderrTimeout(size_t n, int64 millis, ExceptionSink* xsink) {
-    PROCESS_CHECK(QoreValue())
+    if (!m_process) {
+        processCheckError(xsink);
+        return QoreValue();
+    }
 
     // check size to read
     if (n <= 0)
@@ -456,7 +489,10 @@ QoreValue ProcessPriv::readStderrTimeout(size_t n, int64 millis, ExceptionSink* 
 }
 
 QoreValue ProcessPriv::readStdout(size_t n, ExceptionSink* xsink) {
-    PROCESS_CHECK(QoreValue())
+    if (!m_process) {
+        processCheckError(xsink);
+        return QoreValue();
+    }
 
     // check size to read
     if (n <= 0)
@@ -476,7 +512,10 @@ QoreValue ProcessPriv::readStdout(size_t n, ExceptionSink* xsink) {
 }
 
 QoreValue ProcessPriv::readStdoutTimeout(size_t n, int64 millis, ExceptionSink* xsink) {
-    PROCESS_CHECK(QoreValue())
+    if (!m_process) {
+        processCheckError(xsink);
+        return QoreValue();
+    }
 
     // check size to read
     if (n <= 0)
@@ -496,7 +535,10 @@ QoreValue ProcessPriv::readStdoutTimeout(size_t n, int64 millis, ExceptionSink* 
 }
 
 void ProcessPriv::write(const char* val, size_t n, ExceptionSink* xsink) {
-    PROCESS_CHECK_NO_RET
+    if (!m_process) {
+        processCheckError(xsink);
+        return;
+    }
 
     if (!val || !n)
         return;

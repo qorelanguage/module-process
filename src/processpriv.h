@@ -77,16 +77,16 @@ public:
     DLLLOCAL static void waitForTermination(int pid, ExceptionSink* xsink);
 
 private:
-    ResolvedCallReferenceNode* optsExecutor(const char* name, const QoreHashNode* opts, ExceptionSink* xsink);
+    DLLLOCAL ResolvedCallReferenceNode* optsExecutor(const char* name, const QoreHashNode* opts, ExceptionSink* xsink);
 
-    bp::environment optsEnv(const QoreHashNode* opts, ExceptionSink* xsink);
-    const char* optsCwd(const QoreHashNode* opts, ExceptionSink* xsink);
+    DLLLOCAL bp::environment optsEnv(const QoreHashNode* opts, ExceptionSink* xsink);
+    DLLLOCAL std::string optsCwd(const QoreHashNode* opts, ExceptionSink* xsink);
 
     //! Process exe arguments passed through constructor.
-    void processArgs(const QoreListNode* arguments, std::vector<std::string>& out);
+    DLLLOCAL void processArgs(const QoreListNode* arguments, std::vector<std::string>& out);
     
     //! Prepare stdin ASIO buffer for use in async_write operation.
-    void prepareStdinBuffer();
+    DLLLOCAL void prepareStdinBuffer();
 
 #ifdef __linux__
     DLLLOCAL static QoreHashNode* getMemorySummaryInfoLinux(int pid, ExceptionSink* xsink);
@@ -96,20 +96,22 @@ private:
 #endif
 
     //! Thread-safe input buffer. Used for writing to child process's stdin.
-    class InputBuffer {
+    class InputBuffer final {
     public:
-        InputBuffer() = default;
-        ~InputBuffer() {
-            m_cv.notify_all();
-        }
+        DLLLOCAL InputBuffer() = default;
+        DLLLOCAL InputBuffer(InputBuffer&& a) = delete;
+        DLLLOCAL InputBuffer(const InputBuffer& a) = delete;
+        DLLLOCAL InputBuffer& operator=(InputBuffer&& other) = delete;
+        DLLLOCAL InputBuffer& operator=(const InputBuffer& other) = delete;
+        DLLLOCAL ~InputBuffer() {}
 
         //! Get size of data currently in buffer.
-        size_t size() {
+        DLLLOCAL size_t size() {
             return m_buf.size();
         }
 
         //! Write data into the input buffer.
-        void write(const char* src, size_t n) {
+        DLLLOCAL void write(const char* src, size_t n) {
             if (!src || !n)
                 return;
 
@@ -118,7 +120,7 @@ private:
         }
 
         //! Extract data from the input buffer.
-        size_t extract(std::vector<char>& dest, size_t n) {
+        DLLLOCAL size_t extract(std::vector<char>& dest, size_t n) {
             if (!n)
                 return 0;
 
@@ -136,20 +138,23 @@ private:
 
     private:
         std::mutex m_mtx;
-        std::condition_variable m_cv;
         std::string m_buf;
     };
 
     //! Thread-safe output buffer. Used for storing data from child process's stdout and stderr.
-    class OutputBuffer {
+    class OutputBuffer final {
     public:
-        OutputBuffer() = default;
-        ~OutputBuffer() {
+        DLLLOCAL OutputBuffer() = default;
+        DLLLOCAL OutputBuffer(OutputBuffer&& a) = delete;
+        DLLLOCAL OutputBuffer(const OutputBuffer& a) = delete;
+        DLLLOCAL OutputBuffer& operator=(OutputBuffer&& other) = delete;
+        DLLLOCAL OutputBuffer& operator=(const OutputBuffer& other) = delete;
+        DLLLOCAL ~OutputBuffer() {
             m_cv.notify_all();
         }
 
         //! Read from the buffer and return instantly if there is no data. Does not add null character at the end.
-        size_t read(char* dest, size_t n) {
+        DLLLOCAL size_t read(char* dest, size_t n) {
             if (!dest || !n)
                 return 0;
 
@@ -164,7 +169,7 @@ private:
         }
 
         //! Read from the buffer to a Qore string and return instantly if there is no data.
-        size_t read(QoreString* dest, size_t n) {
+        DLLLOCAL size_t read(QoreString* dest, size_t n) {
             if (!dest || !n)
                 return 0;
 
@@ -179,7 +184,7 @@ private:
         }
 
         //! Read from the buffer and return if there is no data after timeout period. Does not add null character at the end.
-        size_t readTimeout(char* dest, size_t n, int64 millis) {
+        DLLLOCAL size_t readTimeout(char* dest, size_t n, int64 millis) {
             if (!dest || !n)
                 return 0;
 
@@ -199,7 +204,7 @@ private:
         }
 
         //! Read from the buffer and return if there is no data after timeout period.
-        size_t readTimeout(QoreString* dest, size_t n, int64 millis) {
+        DLLLOCAL size_t readTimeout(QoreString* dest, size_t n, int64 millis) {
             if (!dest || !n)
                 return 0;
 
@@ -219,7 +224,7 @@ private:
         }
 
         //! Append data to the buffer.
-        void append(const char* src, size_t n) {
+        DLLLOCAL void append(const char* src, size_t n) {
             if (!src || !n)
                 return;
 
@@ -238,7 +243,7 @@ private:
         std::string m_buf;
 
         //! Read data from buffer in to the destination. Expects that mutex is locked.
-        size_t doRead(char* dest, size_t n) {
+        DLLLOCAL size_t doRead(char* dest, size_t n) {
             // fix the read size
             if (m_buf.size() < n)
                 n = m_buf.size();
@@ -249,7 +254,7 @@ private:
         }
 
         //! Read data from buffer in to the destination Qore string. Expects that mutex is locked.
-        size_t doRead(QoreString* dest, size_t n) {
+        DLLLOCAL size_t doRead(QoreString* dest, size_t n) {
             // fix the read size
             if (m_buf.size() < n)
                 n = m_buf.size();
