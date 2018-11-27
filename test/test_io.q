@@ -7,8 +7,13 @@ Qore::stdout.write(s);
 
 Qore::stderr.write("123");
 Qore::stderr.sync();
-Qore::stderr.write("my error 0\n");
-sleep(2s);
-Qore::stderr.write("my error 1\n");
+s = Qore::stdin.readLine(False);
 
-exit(0);
+Qore::stdout.write(s);
+Qore::stderr.write(s);
+sleep(2s);
+s = Qore::stdin.readLine(False);
+
+int retCode = int(s);
+
+exit(retCode);

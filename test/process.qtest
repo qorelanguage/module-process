@@ -24,7 +24,7 @@ public class Main inherits QUnit::Test {
             ),
             "LINUX" : (
                 "searchPathTest_in" : "ls",
-                "searchPathTest_out" : "/usr/bin/ls",
+                "searchPathTest_out" : "^(/usr)?/bin/ls$",
                 "simpleTest_exe" : "ls",
                 "simpleTest_arg" : ("-l" , "-s",),
                 "executorsTest_success" : "Success",
@@ -51,26 +51,28 @@ public class Main inherits QUnit::Test {
         d.chdir(get_script_dir());
         m_prefix = d.path() + DirSep;
 
+        addTestCase("SearchPath test", \searchPathTest());
+        addTestCase("Absolute test", \absoluteTest());
         addTestCase("loadavg test", \loadAvgTest());
-        addTestCase("searchPath test", \searchPathTest());
         addTestCase("Constructor test", \constructorTest());
         addTestCase("Simple test", \simpleTest());
         addTestCase("Single test negative", \simpleTestNegative());
         addTestCase("IO test", \ioTest());
+        addTestCase("Dead process IO test", \deadProcessIOTest());
         addTestCase("Executor events test: closure", \executorsTest());
         addTestCase("Executor events test: refs", \executorsRefsTest());
         addTestCase("Executor negative test", \executorsNegativeTest());
         addTestCase("Thread test", \threadTest());
         addTestCase("Env vars test", \envVarsTest());
         addTestCase("Env var negative test", \envVarsNegativeTest());
-        addTestCase("working dir test", \cwdTest());
-        addTestCase("custom PATH test negative", \pathTestNegative());
-        addTestCase("detach test", \detachTest());
-        addTestCase("detach test negative", \detachTestNegative());
-        addTestCase("wait timeout", \waitTimeoutTest());
-        addTestCase("absolute test", \absoluteTest());
-        addTestCase("mem and checkPid test", \memoryAndCheckPidTest());
-        addTestCase("terminate test", \terminateTest());
+        addTestCase("Working dir test", \cwdTest());
+        addTestCase("Custom PATH test negative", \pathTestNegative());
+        addTestCase("Detach test", \detachTest());
+        addTestCase("Detach test negative", \detachTestNegative());
+        addTestCase("Detached process IO test", \detachedProcessIOTest());
+        addTestCase("Wait timeout test", \waitTimeoutTest());
+        addTestCase("Mem and checkPid test", \memoryAndCheckPidTest());
+        addTestCase("Terminate test", \terminateTest());
 
         # Return for compatibility with test harness that checks return value.
         set_return_value(main());
@@ -109,11 +111,11 @@ public class Main inherits QUnit::Test {
 
     searchPathTest() {
         any s = Process::searchPath(getTestValue("searchPathTest_in"));
-        assertEq(getTestValue("searchPathTest_out"), s, sprintf("searchPath for %s", getTestValue("searchPathTest_in")));
+        assertRegex(getTestValue("searchPathTest_out"), s, sprintf("searchPath for %s", getTestValue("searchPathTest_in")));
 
         try {
             Process::searchPath("some-not-existing-exec");
-            assertEq(0, 1, "some-not-existing-exec for searchPath");
+            fail();
         }
         catch (hash ex) {
             assertEq("PROCESS-SEARCH-PATH-ERROR", ex.err, "some-not-existing-exec for searchPath");
@@ -147,7 +149,7 @@ public class Main inherits QUnit::Test {
         try {
             Process p1(exe);
             p1.wait();
-            assertEq(0, p1.exitCode(), "exit code p1");
+            fail();
         }
         catch (hash ex) {
             assertEq("PROCESS-SEARCH-PATH-ERROR", ex.err, "it should not be found");
@@ -168,19 +170,109 @@ public class Main inherits QUnit::Test {
         assertEq(True, p.valid(), "process must be valid");
 
         p.wait();
-        int ret = p.exitCode();
-        assertEq(0, ret, "expected 0 retval");
+        assertEq(0, p.exitCode());
     }
 
     simpleTestNegative() {
         try {
             Process p("some-not-existing-exec");
             p.wait();
-            int ret = p.exitCode();
-            assertEq(0, 1, "some-not-existing-exec for Process");
+            fail();
         }
         catch (hash ex) {
             assertEq("PROCESS-SEARCH-PATH-ERROR", ex.err, "some-not-existing-exec for Process");
+        }
+    }
+
+    ioTest() {
+        string str = "text to write\n";
+        hash opts = (
+                "path" : ( m_prefix, ),
+            );
+        Process p("test_io.q", opts);
+
+        assertEq(NOTHING, p.readStdout(1000));
+        assertEq(NOTHING, p.readStderr(1000));
+        
+        p.write(str);
+
+        sleep(1s); # sleep to make sure that there is some stdout data ready
+
+        string b1 = p.readStdout(1);
+        assertEq("t", b1, "byte 1 stdout read test");
+        string b2 = p.readStdout(2);
+        assertEq("ex", b2, "byte 2 stdout read test");
+
+        b2 = p.readStdout(1000);
+        assertEq(str.substr(3), b2);
+
+        b1 = p.readStderr(1);
+        assertEq("1", b1, "byte 1 stderr read test");
+        b2 = p.readStderr(2);
+        assertEq("23", b2, "byte 2 stderr read test");
+
+        for (int i = 0; i < 10; i++) {
+            assertEq(NOTHING, p.readStdout(1000));
+            assertEq(NOTHING, p.readStderr(1000));
+        }
+
+        string testStr;
+        for (int i = 0; i < 10; i++) {
+            testStr += string(rand());
+            testStr += testStr;
+        }
+
+        p.write(testStr + "\n");
+
+        b1 = "";
+        while (b1.size() < testStr.size()) {
+            b1 += p.readStderr(1000);
+        }
+        assertEq(testStr, b1);
+
+        b1 = "";
+        while (b1.size() < testStr.size()) {
+            b1 += p.readStdout(1000);
+        }
+        assertEq(testStr, b1);
+
+        int retCode = (rand().abs() % 256);
+        p.write(string(retCode) + "\n");
+
+        p.wait();
+        assertEq(False, p.running());
+        assertEq(retCode, p.exitCode());
+    }
+
+    deadProcessIOTest() {
+        # normally exited process
+        {
+            Process p(getTestValue("testSleep"), 1, ("path" : (m_prefix,)));
+            assertTrue(p.wait());
+            assertEq(0, p.exitCode(), "process exit code");
+            assertFalse(p.running());
+
+            assertEq(NOTHING, p.readStdout(1000));
+            assertEq(NOTHING, p.readStderr(1000));
+            assertEq(NOTHING, p.readStdout(1000, 200));
+            assertEq(NOTHING, p.readStderr(1000, 200));
+
+            p.write("lorem ipsum"); # shouldn't throw
+        }
+
+        # terminated process
+        {
+            Process p(getTestValue("testSleep"), 5, ("path" : (m_prefix,)));
+            assertTrue(p.running());
+            p.terminate();
+            assertFalse(p.running());
+
+            assertEq(NOTHING, p.readStdout(1000));
+            assertEq(NOTHING, p.readStderr(1000));
+            assertEq(NOTHING, p.readStdout(1000, 200));
+            assertEq(NOTHING, p.readStderr(1000, 200));
+
+            p.write("lorem ipsum"); # shouldn't throw
         }
     }
 
@@ -188,7 +280,9 @@ public class Main inherits QUnit::Test {
         hash opts = (
                 "path" : ( m_prefix, ),
                 "on_success" : sub (hash e) {
-                    if (m_options.verbose) printf("    on_success attribute: %n\n", e);
+                    if (m_options.verbose)
+                        printf("    on_success attribute: %n\n", e);
+
                     assertEq("on_success", e.name, "name check");
                     assertEq(127, e.exit, "on_success exit code check");
                     assertEq(m_prefix + getTestValue("testTrue"), e.exe, "on_success exe check");
@@ -197,35 +291,41 @@ public class Main inherits QUnit::Test {
                     assertEq("system", e.error_category, "on_success error_category check");
                 },
                 "on_setup" : sub (hash e) {
-                    if (m_options.verbose) printf("    on_setup attribute: %n\n", e);
+                    if (m_options.verbose)
+                        printf("    on_setup attribute: %n\n", e);
                     assertEq("on_setup", e.name, "name check");
                 },
                 "on_error" : sub (hash e) {
-                    if (m_options.verbose) printf("    on_error attribute: %n\n", e);
+                    if (m_options.verbose)
+                        printf("    on_error attribute: %n\n", e);
                     assertEq("on_error", e.name, "name check");
                 },
                 "on_fork_error" : sub (hash e) {
-                    if (m_options.verbose) printf("    on_fork_error attribute: %n\n", e);
+                    if (m_options.verbose)
+                        printf("    on_fork_error attribute: %n\n", e);
                     assertEq("on_fork_error", e.name, "name check");
                 },
                 "on_exec_setup" : sub (hash e) {
-                    if (m_options.verbose) printf("    on_exec_setup attribute: %n\n", e);
+                    if (m_options.verbose)
+                        printf("    on_exec_setup attribute: %n\n", e);
                     assertEq("on_exec_setup", e.name, "name check");
                 },
                 "on_exec_error" : sub (hash e) {
-                    if (m_options.verbose) printf("    on_exec_error attribute: %n\n", e);
+                    if (m_options.verbose)
+                        printf("    on_exec_error attribute: %n\n", e);
                     assertEq("on_exec_error", e.name, "name check");
                 },
             );
 
         Process p(getTestValue("testTrue"), opts);
         p.wait();
-        int ret = p.exitCode();
-        assertEq(0, ret, "expected 0 retval");
+        assertEq(0, p.exitCode(), "expected 0 retval");
     }
 
     executorMethod(hash e) {
-        if (m_options.verbose) printf("executorMethod: %n\n", e);
+        if (m_options.verbose)
+            printf("executorMethod: %n\n", e);
+
         assertEq("on_success", e.name, "name check");
         assertEq(127, e.exit, "on_success exit code check");
         assertEq(m_prefix + getTestValue("testTrue"), e.exe, "on_success exe check");
@@ -235,7 +335,9 @@ public class Main inherits QUnit::Test {
     }
 
     static executorStaticMethod(hash e) {
-        if (VERBOSE) printf("executorStaticMethod: %n\n", e);
+        if (VERBOSE)
+            printf("executorStaticMethod: %n\n", e);
+
         MAIN.assertEq("on_success", e.name, "name check");
         MAIN.assertEq(127, e.exit, "on_success exit code check");
         MAIN.assertEq(MAIN.prefix() + MAIN.getTestValue("testTrue"), e.exe, "on_success exe check");
@@ -246,7 +348,9 @@ public class Main inherits QUnit::Test {
 
     executorNoHash() {
         hash e = argv[0];
-        if (m_options.verbose) printf("executorNoHash: %n\n", e);
+        if (m_options.verbose)
+            printf("executorNoHash: %n\n", e);
+
         assertEq("on_success", e.name, "name check");
         assertEq(127, e.exit, "on_success exit code check");
         assertEq(m_prefix + getTestValue("testTrue"), e.exe, "on_success exe check");
@@ -267,8 +371,7 @@ public class Main inherits QUnit::Test {
         while (it.next()) {
             Process p(getTestValue("testTrue"), it.getValue() + ("path" : (m_prefix,)));
             p.wait();
-            int ret = p.exitCode();
-            assertEq(0, ret, "expected 0 retval");
+            assertEq(0, p.exitCode(), "expected 0 retval");
         }
     }
 
@@ -304,51 +407,6 @@ public class Main inherits QUnit::Test {
         }
     }
 
-    ioTest() {
-        string str = "text to write";
-        bool have_stdout = False;
-        bool have_stderr = False;
-
-        hash opts = (
-                "path" : ( m_prefix, ),
-            );
-        Process p("test_io.q", opts);
-        p.write(str + "\n"); # \n is mandatory for test_io.q buffered read
-
-        string b1 = p.readStdout(1);
-        assertEq("t", b1, "byte 1 stdout read test");
-        string b2 = p.readStdout(2);
-        assertEq("ex", b2, "byte 2 stdout read test");
-
-        int ix = 0;
-        while (string e = p.readStdout(-1)) {
-            have_stdout = True;
-            string msg = sprintf("my error %d", ix);
-            assertEq(str.substr(3), e, "stdout text "+ix);
-            ix++;
-        }
-
-        b1 = p.readStderr(1);
-        assertEq("1", b1, "byte 1 stderr read test");
-        b2 = p.readStderr(2);
-        assertEq("23", b2, "byte 2 stderr read test");
-
-        ix = 0;
-        while (string e = p.readStderr()) {
-            have_stderr = True;
-            string msg = sprintf("my error %d", ix);
-            assertEq(msg, e, "stderr text "+ix);
-            ix++;
-        }
-
-        p.wait();
-        int ret = p.exitCode();
-
-        assertEq(0, ret, "expected 0 retval");
-        assertEq(True, have_stderr, "at least some stderr must be done");
-        assertEq(True, have_stdout, "at least some stdout must be done");
-    }
-
     threadTest() {
         Process p("tee");
         assertEq(True, p.id() > 0, "PID must be given");
@@ -371,9 +429,7 @@ public class Main inherits QUnit::Test {
             opts.env += ( "FOO" : "bar" );
             Process p("test_env.q", ("FOO", "bar"), opts);
             p.wait();
-            int ret = p.exitCode();
-
-            assertEq(0, ret, "env var retval for passed env");
+            assertEq(0, p.exitCode(), "env var retval for passed env");
         }
 
         # negative test
@@ -381,11 +437,8 @@ public class Main inherits QUnit::Test {
             hash opts = opts_p;
             Process p("test_env.q", ("FOO", "bar"), opts);
             p.wait();
-            int ret = p.exitCode();
-
-            assertEq(3, ret, "env var retval for NOT passed env");
+            assertEq(3, p.exitCode(), "env var retval for NOT passed env");
         }
-
     }
 
     envVarsNegativeTest() {
@@ -397,7 +450,7 @@ public class Main inherits QUnit::Test {
         try {
             Process p(getTestValue("testTrue"), opts);
             p.wait();
-            assertEq(True, False, "envVarsNegativeTest cannot go here");
+            fail();
         }
         catch (hash ex) {
             assertEq("PROCESS-OPTIONS-ERROR", ex.err, "envVarsNegativeTest negative: err");
@@ -414,9 +467,11 @@ public class Main inherits QUnit::Test {
                 "path" : ( m_prefix, ),
             );
         Process p("test_cwd.q", opts);
-        while (*string e = p.readStdout()) {
-            assertEq(opts.cwd, e, "cwd value read from stdout");
-        }
+        sleep(1s); # wait so there is surely stdout output
+
+        *string e = p.readStdout(1000);
+        assertEq(opts.cwd, e, "cwd value read from stdout");
+
         p.wait();
         assertEq(0, p.exitCode(), "process exit code");
     }
@@ -428,7 +483,7 @@ public class Main inherits QUnit::Test {
         try {
             Process p(getTestValue("testTrue"), opts);
             p.wait();
-            assertEq(0, p.exitCode(), "process exit code");
+            fail();
         }
         catch (hash ex) {
             assertEq("PROCESS-SEARCH-PATH-ERROR", ex.err, "ex.err check");
@@ -439,38 +494,53 @@ public class Main inherits QUnit::Test {
     detachTest() {
         int pid;
         {
-            Process p(getTestValue("testSleep"), 2, ("path" : (m_prefix,)));
+            Process p(getTestValue("testSleep"), 5, ("path" : (m_prefix,)));
             pid = p.id();
             p.detach();
+            assertTrue(p.running(), "Detached process is running");
         }
 
         {
             Process p(pid);
-            assertEq(True, p.running(), "Detached process is not running");
+            assertTrue(p.running(), "Detached process is still running");
             p.terminate();
+            assertFalse(p.running(), "Detached process is not running");
             p.wait();
+            assertFalse(p.running(), "Detached process is not running");
         }
     }
 
     detachTestNegative() {
         int pid;
         {
-            Process p(getTestValue("testSleep"), 2, ("path" : (m_prefix,)));
+            Process p(getTestValue("testSleep"), 5, ("path" : (m_prefix,)));
             pid = p.id();
         }
 
         {
             Process p(pid);
-            assertEq(False, p.running(), "Detached process is running");
+            assertFalse(p.running(), "Detached process is not running");
         }
+    }
+
+    detachedProcessIOTest() {
+        Process p(getTestValue("testSleep"), 5, ("path" : (m_prefix,)));
+        p.detach();
+        assertTrue(p.running(), "Detached process is running");
+
+        assertEq(NOTHING, p.readStdout(1000));
+        assertEq(NOTHING, p.readStderr(1000));
+        assertEq(NOTHING, p.readStdout(1000, 200));
+        assertEq(NOTHING, p.readStderr(1000, 200));
+
+        p.write("lorem ipsum"); # shouldn't throw
     }
 
     waitTimeoutTest() {
         Process p(getTestValue("testSleep"), 3, ("path" : (m_prefix,)));
-        while (!p.wait(2s)) {
-            if (VERBOSE) printf("timeout\n");
-        }
-        p.wait();
+        assertFalse(p.wait(1s));
+        assertTrue(p.wait(5s));
+        assertTrue(p.wait());
         assertEq(0, p.exitCode(), "process exit code");
     }
 
@@ -521,16 +591,16 @@ public class Main inherits QUnit::Test {
 }
 
 sub run_bg(Process p, Main m) {
-    m.assertEq(True, p.id() > 0, "PID must be given");
-    m.assertEq(True, p.valid(), "process must be valid");
-    m.assertEq(True, p.running(), "process must be running");
+    m.assertTrue(p.id() > 0, "PID must be given");
+    m.assertTrue(p.valid(), "process must be valid");
+    m.assertTrue(p.running(), "process must be running");
 
     try {
         p.wait();
     }
     catch (hash ex) {
         m.assertEq("PROCESS-WAIT-ERROR", ex.err, "process is killed from main thread - err");
-        m.assertEq(True, ex.desc.regex("No child processes"), ex.desc, "process is killed from main thread - desc");
+        m.assertTrue(ex.desc.regex("No child processes"), ex.desc, "process is killed from main thread - desc");
     }
 }
 

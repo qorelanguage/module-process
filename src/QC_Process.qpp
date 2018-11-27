@@ -1,5 +1,7 @@
 /* -*- mode: c++; indent-tabs-mode: nil -*- */
 
+#include <qore/Qore.h>
+
 #include "processpriv.h"
 
 #include <cstdlib>
@@ -150,8 +152,9 @@ on_success: hash: (name : "on_success", exe : "/usr/bin/true", pid : 23014, exit
 qclass Process [dom=EXTERNAL_PROCESS; arg=ProcessPriv* priv; ns=Qore::Process];
 
 
-//! Construct the child from a pid.
-/** @param id the PID of the process.
+//! Construct the child from a PID.
+/**
+    @param id the PID of the process.
 
     @note The only functionality available when this constructor is used is id(); all other calls will fail
  */
@@ -160,46 +163,50 @@ Process::constructor(int pid) {
 }
 
 //! Construct a child from given arguments and launch it.
-/** @param command a string with program to be run; can be either an absolute path or a simple command to be found in the search path
+/**
+    @param command a string with program to be run; can be either an absolute path or a simple command to be found in the search path
 
     @throw PROCESS-CONSTRUCTOR-ERROR in case of error. Exception \c desc contains the additional information
-    @throw PROCESS-SEARCH-PATH-ERROR in case when the \c command is not found in given PATH
+    @throw PROCESS-SEARCH-PATH-ERROR in case the \c command is not found in given PATH
  */
 Process::constructor(string command) {
     self->setPrivate(CID_PROCESS, new ProcessPriv(command->getBuffer(), 0, 0, xsink));
 }
 
 //! Construct a child from given arguments and launch it.
-/** @param command a string with program to be run; can be either an absolute path or a simple command to be found in the search path
+/**
+    @param command a string with program to be run; can be either an absolute path or a simple command to be found in the search path
     @param opts a hash with additional options for the child process @ref process_options
 
     @throw PROCESS-CONSTRUCTOR-ERROR in case of error. Exception \c desc contains the additional information
-    @throw PROCESS-OPTIONS-ERROR in case when some invalid option is passed
-    @throw PROCESS-SEARCH-PATH-ERROR in case when the \c command is not found in given PATH
+    @throw PROCESS-OPTIONS-ERROR in case invalid option is passed
+    @throw PROCESS-SEARCH-PATH-ERROR in case the \c command is not found in given PATH
  */
 Process::constructor(string command, hash opts) {
     self->setPrivate(CID_PROCESS, new ProcessPriv(command->getBuffer(), 0, opts, xsink));
 }
 
 //! Construct a child from given arguments and launch it.
-/** @param command a string with program to be run; can be either an absolute path or a simple command to be found in the search path
+/**
+    @param command a string with program to be run; can be either an absolute path or a simple command to be found in the search path
     @param arguments a list with additiona \c command arguments
 
     @throw PROCESS-CONSTRUCTOR-ERROR in case of error. Exception \c desc contains the additional information
-    @throw PROCESS-SEARCH-PATH-ERROR in case when the \c command is not found in given PATH
+    @throw PROCESS-SEARCH-PATH-ERROR in case the \c command is not found in given PATH
  */
 Process::constructor(string command, softlist arguments) {
     self->setPrivate(CID_PROCESS, new ProcessPriv(command->getBuffer(), arguments, 0, xsink));
 }
 
 //! Construct a child from given arguments and launch it.
-/** @param command a string with program to be run; can be either an absolute path or a simple command to be found in the search path
+/**
+    @param command a string with program to be run; can be either an absolute path or a simple command to be found in the search path
     @param arguments a list with additiona \c command arguments
     @param opts a hash with additional options for the child process. See @ref process_options
 
     @throw PROCESS-CONSTRUCTOR-ERROR in case of error. Exception \c desc contains the additional information
-    @throw PROCESS-OPTIONS-ERROR in case when some invalid option is passed
-    @throw PROCESS-SEARCH-PATH-ERROR in case when the \c command is not found in given PATH
+    @throw PROCESS-OPTIONS-ERROR in case invalid option is passed
+    @throw PROCESS-SEARCH-PATH-ERROR in case the \c command is not found in given PATH
  */
 Process::constructor(string command, softlist arguments, hash opts) {
     self->setPrivate(CID_PROCESS, new ProcessPriv(command->getBuffer(), arguments, opts, xsink));
@@ -207,7 +214,7 @@ Process::constructor(string command, softlist arguments, hash opts) {
 
 //! Copy method - instance of this class cannot be copied.
 /**
-    @throw PROCESS-COPY-ERROR - Copying of Process objects is not supported
+    @throw PROCESS-COPY-ERROR Copying of Process objects is not supported
  */
 Process::copy() {
    xsink->raiseException("PROCESS-COPY-ERROR", "copying Proces objects is currently not supported");
@@ -216,7 +223,7 @@ Process::copy() {
 //! Get the child process's exit code.
 /** The return value is without any meaning if the child wasn't waited for or if it was terminated.
 
-    @return int an exit code
+    @return child process's exit code
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
@@ -225,7 +232,8 @@ int Process::exitCode() {
 }
 
 //! Get the Process Identifier.
-/** @return int a child's PID
+/**
+    @return child process's PID
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
@@ -236,7 +244,7 @@ int Process::id() {
 //! Check if this handle holds a child process.
 /** That does not mean, that the process is still running. It only means, that the handle does or did exist.
 
-    @return bool \c True in case of valid child handle
+    @return \c True in case of valid child handle
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
@@ -245,7 +253,8 @@ bool Process::valid() {
 }
 
 //! Check if the child process is running.
-/** @return bool True if the child is running
+/**
+    @return \c True if the child is running
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
 
@@ -256,9 +265,10 @@ bool Process::running() {
 }
 
 //! Wait for the child process to exit.
-/** @return bool always returns True to keep compatibility with wait(timeout) version
-
+/**
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+
+    @return always returns \c True to keep compatibility with wait(timeout) version
 
     Example:
     @code
@@ -272,11 +282,12 @@ bool Process::wait() {
 }
 
 //! Wait for the child process to exit.
-/** @param t a timeout to wait
-
-    @return bool True if child exited while waiting. False in case of timeout
+/**
+    @param t a timeout to wait
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+
+    @return \c True if child exited while waiting, \c False in case of timeout
 
     Example:
     @code
@@ -301,7 +312,7 @@ nothing Process::detach() {
 
 //! Terminate the child process.
 /** This function will cause the child process to unconditionally
-    and immediately exit. It is implement with SIGKILL on posix
+    and immediately exit. It is implemented with SIGKILL on posix
     and TerminateProcess on windows.
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
@@ -313,95 +324,116 @@ nothing Process::terminate() {
 //! Write into child's \c stdin
 /** @param s a string data to be writen
 
-    @note an end of line (EOL) is appended automatically
-
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
 nothing Process::write(string s) {
-    priv->write(s->getBuffer(), xsink);
+    priv->write(s->c_str(), s->size(), xsink);
 }
 
 //! Write into child's \c stdin
 /** @param b a binary data to be writen
 
-    @note an end of line (EOL) is appended automatically
-
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
 nothing Process::write(binary b) {
-    priv->write((char*)b->getPtr(), xsink);
+    priv->write(static_cast<const char*>(b->getPtr()), b->size(), xsink);
 }
 
 //! Write into child's \c stdin
 /** @param i an integer to be writen
 
-    @note an end of line (EOL) is appended automatically
-
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
 nothing Process::write(int i) {
     QoreStringNodeValueHelper s(i);
-    priv->write(s->getBuffer(), xsink);
+    priv->write(s->c_str(), s->size(), xsink);
 }
 
 //! Write into child's \c stdin
 /** @param f a float to be writen
 
-    @note an end of line (EOL) is appended automatically
-
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
 nothing Process::write(float f) {
     QoreStringNodeValueHelper s(f);
-    priv->write(s->getBuffer(), xsink);
+    priv->write(s->c_str(), s->size(), xsink);
 }
 
 //! Write into child's \c stdin
 /** @param n a number to be writen
 
-    @note an end of line (EOL) is appended automatically
-
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
 nothing Process::write(number n) {
     QoreStringNodeValueHelper s(n);
-    priv->write(s->getBuffer(), xsink);
+    priv->write(s->c_str(), s->size(), xsink);
 }
 
-//! Read from child process's standard output - one line, up to EOL
-/** @return string with data
- */
-string Process::readStdout() {
-    return priv->readStdout();
-}
+//! Read from child process's standard output.
+/** Reads data from child process's standard output. If no timeout is given, or
+    timeout is 0 or negative, the method reads all data that is currently available
+    up to the count passed in \c bytes parameter and then returns immediately.
+    If no data is available, it will return NOTHING.
 
-//! Read from child process's standard output - exact byte size
-/** @return string with data
-    @param bytes a count of bytes to read; if the value is negative, then a single line is read
+    If positive timeout value is passed, then the method reads all data that is
+    currently available up to the count passed in \c bytes parameter and then
+    returns immediately. If no data is available, it will sleep until timeout
+    and then try to read. If there is still no data, it will return.
+
+    This method does not guarantee that any data will be read or that \c bytes
+    count of bytes will be read.
+
+    @param bytes a maximum count of bytes to read
+    @param timeout timeout in milliseconds; if 0 or negative, the method will return immediately if there is no data available
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
     @throw PROCESS-READ-ERROR in case of read error
+
+    @returns string with data or NOTHING if no data is available
  */
-string Process::readStdout(int bytes) {
-    return bytes < 0 ? priv->readStdout() : priv->readStdout(bytes, xsink);
+*string Process::readStdout(int bytes, int timeout = 0) {
+    if (bytes < 0)
+        return QoreValue();
+
+    if (timeout > 0)
+        return priv->readStdoutTimeout(static_cast<size_t>(bytes), timeout, xsink);
+    return priv->readStdout(static_cast<size_t>(bytes), xsink);
 }
 
-//! Read from child process's standard error - one line, up to EOL
-/** @return string with data
- */
-string Process::readStderr() {
-    return priv->readStderr();
-}
+//! Read from child process's standard error output.
+/** Reads data from child process's standard error output. If no timeout is given,
+    or timeout is 0 or negative, the method reads all data that is currently
+    available up to the count passed in \c bytes parameter and then returns immediately.
+    If no data is available, it will return NOTHING.
 
-//! Read from child process's standard output - exact byte size
-/** @return string with data
-    @param bytes a count of bytes to read; if the value is negative, then a single line is read
+    If positive timeout value is passed, then the method reads all data that is
+    currently available up to the count passed in \c bytes parameter and then
+    returns immediately. If no data is available, it will sleep until timeout
+    and then try to read. If there is still no data, it will return.
+
+    This method does not guarantee that any data will be read or that \c bytes
+    count of bytes will be read.
+
+    @param bytes a maximum count of bytes to read
+    @param timeout timeout in milliseconds; if 0 or negative, the method will return immediately if there is no data available
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
     @throw PROCESS-READ-ERROR in case of read error
+
+    @returns string with data or NOTHING if no data is available
  */
-string Process::readStderr(int bytes) {
-    return bytes < 0 ? priv->readStderr() : priv->readStderr(bytes, xsink);
+*string Process::readStderr(int bytes, int timeout = 0) {
+    if (bytes < 0)
+        return QoreValue();
+
+    if (timeout > 0)
+        return priv->readStderrTimeout(static_cast<size_t>(bytes), timeout, xsink);
+    return priv->readStderr(static_cast<size_t>(bytes), xsink);
 }
 
 //! Returns process information for the process managed by the current object
-/** @return a @ref MemorySummaryInfo hash of memory info
+/**
+    @return a @ref MemorySummaryInfo hash of memory info
 
     @throw PROCESS-GETMEMORYINFO-ERROR an error occurred querying the process's memory usage (PID does not exist or no permission to read the process's virtual memory tables)
     @throw PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
@@ -421,30 +453,33 @@ hash<MemorySummaryInfo> Process::getMemorySummaryInfo() {
 }
 
 //! Search for full path of command in current process's PATH
-/** @param command a string with command name
+/**
+    @param command command name
 
     @return string with full path of the \c command
 
-    @throw PROCESS-SEARCH-PATH-ERROR in case when the \c command is not found in given PATH
+    @throw PROCESS-SEARCH-PATH-ERROR in case the \c command is not found in given PATH
  */
 static *string Process::searchPath(string command) {
     return new QoreStringNode(ProcessPriv::optsPath(command->getBuffer(), 0, xsink).string());
 }
 
 //! Search for full path of command in current process's PATH
-/** @param command a string with command name
+/**
+    @param command command name
     @param opts a hash with process options. @ref process_options - \c path is important here
 
     @return string with full path of the \c command
 
-    @throw PROCESS-SEARCH-PATH-ERROR in case when the \c command is not found in given PATH
+    @throw PROCESS-SEARCH-PATH-ERROR in case the \c command is not found in given PATH
  */
 static *string Process::searchPath(string command, hash opts) {
     return new QoreStringNode(ProcessPriv::optsPath(command->getBuffer(), opts, xsink).string());
 }
 
 //! Returns process information for the current process
-/** @return a @ref MemorySummaryInfo hash of memory info
+/**
+    @return a @ref MemorySummaryInfo hash of memory info
 
     @throw PROCESS-GETMEMORYINFO-ERROR an error occurred querying the process's memory usage (PID does not exist or no permission to read the process's virtual memory tables)
     @throw PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
@@ -460,7 +495,8 @@ static hash<MemorySummaryInfo> Process::getMemorySummaryInfo() {
 }
 
 //! Returns process information for the given PID
-/** @param pid the PID of the process
+/**
+    @param pid the PID of the process
 
     @return a @ref MemorySummaryInfo hash of memory info
 
@@ -478,14 +514,14 @@ static hash<MemorySummaryInfo> Process::getMemorySummaryInfo(int pid) {
 }
 
 //! Returns @ref Qore::True "True" if the process is running, @ref Qore::False "False" if not
-/** @param pid the PID of the process
+/**
+    @param pid the PID of the process
 
     @return @ref Qore::True "True" if the process is running, @ref Qore::False "False" if not
 
     @throw PROCESS-CHECKPID-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
 
-    @note
-    - this method has been implemented for Unix and Unix-like systems only; on all other platforms a \c PROCESS-CHECKPID-UNSUPPORTED-ERROR exception is thrown
+    @note this method has been implemented for Unix and Unix-like systems only; on all other platforms a \c PROCESS-CHECKPID-UNSUPPORTED-ERROR exception is thrown
 
     @see
     - @ref HAVE_PROCESS_CHECKPID
@@ -496,7 +532,8 @@ static bool Process::checkPid(int pid) {
 }
 
 //! terminate a process unconditionally given its PID
-/** @param pid the PID of the process to terminate
+/**
+    @param pid PID of the process to terminate
 
     @throw PROCESS-TERMINATE-ERROR insufficient permissions to terminate process
     @throw PROCESS-INVALID-PID invalid PID
@@ -513,7 +550,8 @@ static nothing Process::terminate(int pid) {
 }
 
 //! wait until a given PID terminates
-/** @param pid the PID of the process to wait for
+/**
+    @param pid PID of the process to wait for
 
     @throw PROCESS-WAITFORTERMINATION-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
 
