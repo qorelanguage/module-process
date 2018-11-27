@@ -82,6 +82,8 @@ private:
     DLLLOCAL bp::environment optsEnv(const QoreHashNode* opts, ExceptionSink* xsink);
     DLLLOCAL std::string optsCwd(const QoreHashNode* opts, ExceptionSink* xsink);
 
+    DLLLOCAL bool processCheck(ExceptionSink* xsink);
+
     //! Process exe arguments passed through constructor.
     DLLLOCAL void processArgs(const QoreListNode* arguments, std::vector<std::string>& out);
     
