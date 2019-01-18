@@ -1,3 +1,26 @@
+/*
+    Qore Programming Language process Module
+
+    Copyright (C) 2003 - 2019 Qore Technologies, s.r.o.
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+*/
 
 #include <qore/Qore.h>
 
@@ -22,13 +45,10 @@ The %process module provdes an API to manage system processes. It can be used to
 
     @section process_license Process Module License Information
 
-This module is released under a choice of two licenses:
+This module is released under the MIT license (see COPYING in the source distribution for more information)
 
- - LGPL 2.1
- - MIT (see COPYING.MIT in the source distribution for more information)
-
-Boost parts in src/boost are distributed underthe Boost Software License,
-Version 1.0. (See accompanying file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+Boost parts in src/boost are distributed under the Boost Software License,
+Version 1.0. (See http://www.boost.org/LICENSE_1_0.txt)
 
     @section process_relnotes Process Module Release History
 
@@ -76,4 +96,4 @@ DLLEXPORT int qore_module_api_minor = QORE_MODULE_API_MINOR;
 DLLEXPORT qore_module_init_t qore_module_init = process_module_init;
 DLLEXPORT qore_module_ns_init_t qore_module_ns_init = process_module_ns_init;
 DLLEXPORT qore_module_delete_t qore_module_delete = process_module_delete;
-DLLEXPORT qore_license_t qore_module_license = QL_LGPL;
+DLLEXPORT qore_license_t qore_module_license = QL_MIT;
