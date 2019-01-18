@@ -1,3 +1,27 @@
+/*
+    Qore Programming Language process Module
+
+    Copyright (C) 2003 - 2019 Qore Technologies, s.r.o.
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+*/
+
 #include "processpriv.h"
 
 // std
@@ -285,7 +309,12 @@ boost::filesystem::path ProcessPriv::optsPath(const char* command, const QoreHas
         ret.clear();
         xsink->raiseException("PROCESS-SEARCH-PATH-ERROR", "Command '%s' cannot be found in PATH", command);
     }
-    return boost::filesystem::absolute(ret);
+    try {
+        return boost::filesystem::absolute(ret);
+    } catch (const std::exception& ex) {
+        xsink->raiseException("PROCESS-DIRECTORY-ERROR", ex.what());
+        return ret;
+    }
 }
 
 bool ProcessPriv::processCheck(ExceptionSink* xsink) {
@@ -321,8 +350,7 @@ int ProcessPriv::exitCode(ExceptionSink* xsink) {
 
     try {
         return m_process->exit_code();
-    }
-    catch (const std::exception& ex) {
+    } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-EXITCODE-ERROR", ex.what());
     }
 
@@ -335,8 +363,7 @@ int ProcessPriv::id(ExceptionSink* xsink) {
 
     try {
         return m_process->id();
-    }
-    catch (const std::exception& ex) {
+    } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-ID-ERROR", ex.what());
     }
 
@@ -349,8 +376,7 @@ bool ProcessPriv::valid(ExceptionSink* xsink) {
 
     try {
         return m_process->valid();
-    }
-    catch (const std::exception& ex) {
+    } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-VALID-ERROR", ex.what());
     }
 
@@ -363,8 +389,7 @@ bool ProcessPriv::running(ExceptionSink* xsink) {
 
     try {
         return m_process->running();
-    }
-    catch (const std::exception& ex) {
+    } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-RUNNING-ERROR", ex.what());
     }
 
@@ -381,8 +406,7 @@ bool ProcessPriv::wait(ExceptionSink* xsink) {
             // TODO: exceptions + completion handler?
         }
         return true;
-    }
-    catch (const std::exception& ex) {
+    } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-WAIT-ERROR", ex.what());
     }
 
@@ -398,8 +422,7 @@ bool ProcessPriv::wait(int64 t, ExceptionSink* xsink) {
             return m_process->wait_for(std::chrono::milliseconds(t));
         }
         return false;
-    }
-    catch (const std::exception& ex) {
+    } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-WAIT-ERROR", ex.what());
     }
 
@@ -421,8 +444,7 @@ bool ProcessPriv::terminate(ExceptionSink* xsink) {
     try {
         m_process->terminate();
         return true;
-    }
-    catch (const std::exception& ex) {
+    } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-TERMINATE-ERROR", ex.what());
     }
 
@@ -442,8 +464,7 @@ QoreValue ProcessPriv::readStderr(size_t n, ExceptionSink* xsink) {
         size_t read = m_err_buf.read(*str, n);
         if (read)
             return str.release();
-    }
-    catch (const std::exception& ex) {
+    } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-READ-ERROR", ex.what());
     }
 
@@ -464,8 +485,7 @@ QoreValue ProcessPriv::readStderrTimeout(size_t n, int64 millis, ExceptionSink* 
         size_t read = m_err_buf.readTimeout(*str, n, millis);
         if (read)
             return str.release();
-    }
-    catch (const std::exception& ex) {
+    } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-READ-ERROR", ex.what());
     }
 
@@ -485,8 +505,7 @@ QoreValue ProcessPriv::readStdout(size_t n, ExceptionSink* xsink) {
         size_t read = m_out_buf.read(*str, n);
         if (read)
             return str.release();
-    }
-    catch (const std::exception& ex) {
+    } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-READ-ERROR", ex.what());
     }
 
@@ -506,8 +525,7 @@ QoreValue ProcessPriv::readStdoutTimeout(size_t n, int64 millis, ExceptionSink* 
         size_t read = m_out_buf.readTimeout(*str, n, millis);
         if (read)
             return str.release();
-    }
-    catch (const std::exception& ex) {
+    } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-READ-ERROR", ex.what());
     }
 
@@ -528,7 +546,7 @@ void ProcessPriv::write(const char* val, size_t n, ExceptionSink* xsink) {
     std::lock_guard<std::mutex> lock(m_async_write_mtx);
     if (m_async_write_running)
         return;
-    
+
     // if there is not, start a new one
     prepareStdinBuffer();
     boost::asio::async_write(m_in_pipe, m_in_asiobuf, m_on_stdin_complete);
