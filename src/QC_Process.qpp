@@ -70,6 +70,8 @@ hashdecl Qore::Process::MemorySummaryInfo {
     //! the resident size of the process in bytes (RAM in use)
     int rss;
     //! the private memory size of the process; meaning heap and stack size, without any code or shared/dynamic libraries included; this gives a measure of how much memory the process itself is using
+    /** On Linux, this reports the sum of referenced memory in private, writable, non-mmap()ed virtual memory segments
+     */
     int priv;
 }
 
@@ -174,7 +176,6 @@ on_success: hash: (name : "on_success", exe : "/usr/bin/true", pid : 23014, exit
 
  */
 qclass Process [dom=EXTERNAL_PROCESS; arg=ProcessPriv* priv; ns=Qore::Process];
-
 
 //! Construct the child from a PID.
 /**
