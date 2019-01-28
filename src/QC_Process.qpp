@@ -62,14 +62,14 @@ const HAVE_PROCESS_WAITFORTERMINATION = bool(HAVE_PROCESS_WAITFORTERMINATION);
 //@}
 
 //! A hash of summary memory information as provided by @ref Qore::Process::Process::getMemorySummaryInfo() "Process::getMemorySummaryInfo()"
-/** @note On Linux, \c priv reports the sum of referenced memory in private, writable, non-mmap()ed virtual memory segments
+/** @note On Linux, \c priv reports the sum of "proportional set sizes" for all virtual memory segments
 */
 hashdecl Qore::Process::MemorySummaryInfo {
     //! the virtual size of the process in bytes including all shared/dynamic libraries, code, and data
     int vsz;
     //! the resident size of the process in bytes (RAM in use)
     int rss;
-    //! the private memory size of the process; meaning heap and stack size, without any code or shared/dynamic libraries included; this gives a measure of how much memory the process itself is using
+    //! the private memory size of the process giving a measure of how much memory the process itself is using
     int priv;
 }
 

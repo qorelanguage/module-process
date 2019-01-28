@@ -620,65 +620,48 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoLinux(int pid, ExceptionSink* xsi
 
         int64 segment_size = 0;
 
-        // if memory is not readable or writable or private then skip
-        if (l[pos1 + 1] == 'r' && l[pos1 + 2] == 'w' && l[pos1 + 4] == 'p') {
-            size_t start;
-            {
-                QoreString num(&l, pos);
-                start = strtoll(num.c_str(), nullptr, 16);
-            }
-
-            size_t end;
-            {
-                QoreString num(l.c_str() + pos + 1, pos1 - pos - 1);
-                end = strtoll(num.c_str(), nullptr, 16);
-            }
-
-            // get end of offset
-            pos = l.find(' ', pos1 + 6);
-            assert(pos != -1);
-
-            // get end of device
-            pos = l.find(' ', pos + 1);
-            assert(pos != -1);
-
-            // get end of inode
-            pos1 = l.find(' ', ++pos);
-
-            bool skip_segment = false;
-            // issue #3018: only check inode field if it exists
-            if (pos1 != -1) {
-                QoreString num(l.c_str() + pos, pos1 - pos);
-                // skip mmap()'ed entries with a non-zero inode value
-                if (num.toBigInt()) {
-                    skip_segment = true;
-                }
-            }
-
-            if (!skip_segment) {
-                segment_size = (end - start);
-                //printd(5, "smaps: end: %lx start: %lx ss: %010lld ps: %lld\n", end, start, end - start, priv_size);
-            }
+        size_t start;
+        {
+            QoreString num(&l, pos);
+            start = strtoll(num.c_str(), nullptr, 16);
         }
 
+        size_t end;
+        {
+            QoreString num(l.c_str() + pos + 1, pos1 - pos - 1);
+            end = strtoll(num.c_str(), nullptr, 16);
+        }
+
+        // get end of offset
+        pos = l.find(' ', pos1 + 6);
+        assert(pos != -1);
+
+        // get end of device
+        pos = l.find(' ', pos + 1);
+        assert(pos != -1);
+
+        // get end of inode
+        pos1 = l.find(' ', ++pos);
+
+        segment_size = (end - start);
+
         // read in segment attributes
+        size_t pss = 0;
         while (true) {
             if (f.readLine(l)) {
                 xsink->raiseErrnoException("PROCESS-GETMEMORYINFO-ERROR", errno, "could not read virtual shared memory map for PID %d", pid);
                 return nullptr;
             }
 
-            if (l.equalPartial("Referenced:")) {
-                QoreString num(l.c_str() + 12);
-                size_t ref_size = strtoll(num.c_str(), nullptr, 10);
+            if (segment_size && l.equalPartial("Pss:")) {
+                QoreString num(l.c_str() + 4);
+                pss = strtoll(num.c_str(), nullptr, 10);
                 //printd(5, "smaps: segment referenced size: %lld '%s'\n", ref_size, num.c_str());
-                if (ref_size) {
-                    priv_size += ref_size * 1024;
-                }
                 continue;
             }
 
             if (l.equalPartial("VmFlags:")) {
+                priv_size += pss * 1024;
                 break;
             }
         }
