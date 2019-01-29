@@ -593,9 +593,9 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoLinux(int pid, ExceptionSink* xsi
     rv->setKeyValue("rss", rss, xsink);
 
     {
-        QoreStringMaker str("/proc/%d/maps", pid);
+        QoreStringMaker str("/proc/%d/smaps", pid);
         if (f.open(str.c_str())) {
-            xsink->raiseErrnoException("PROCESS-GETMEMORYINFO-ERROR", errno, "could not read virtual memory map for PID %d", pid);
+            xsink->raiseErrnoException("PROCESS-GETMEMORYINFO-ERROR", errno, "could not read virtual shared memory map for PID %d", pid);
             return nullptr;
         }
     }
@@ -603,10 +603,11 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoLinux(int pid, ExceptionSink* xsi
     int64 priv_size = 0;
 
     while (true) {
-        if (f.readLine(l))
+        if (f.readLine(l)) {
             break;
+        }
 
-        // maps line format: 0=start-end 1=perms 2=offset 3=device 4=inode 5=pathname
+        // smaps map line format: 0=start-end 1=perms 2=offset 3=device 4=inode 5=pathname
         // ex: 01f1c000-01f3d000 rw-p 00000000 00:00 0                                  [heap]
 
         // find memory range separator
@@ -617,9 +618,7 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoLinux(int pid, ExceptionSink* xsi
         qore_offset_t pos1 = l.find(' ', pos + 1);
         assert(pos1 != -1);
 
-        // if memory is not writable or private then skip
-        if (l[pos1 + 2] != 'w' || l[pos1 + 4] != 'p')
-            continue;
+        int64 segment_size = 0;
 
         size_t start;
         {
@@ -643,20 +642,34 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoLinux(int pid, ExceptionSink* xsi
 
         // get end of inode
         pos1 = l.find(' ', ++pos);
-        // issue #3018: only check inode field if it exists
-        if (pos1 != -1) {
-            QoreString num(l.c_str() + pos, pos1 - pos);
-            // skip mmap()'ed entries with a non-zero inode value
-            if (num.toBigInt()) {
+
+        segment_size = (end - start);
+
+        // read in segment attributes
+        size_t pss = 0;
+        while (true) {
+            if (f.readLine(l)) {
+                xsink->raiseErrnoException("PROCESS-GETMEMORYINFO-ERROR", errno, "could not read virtual shared memory map for PID %d", pid);
+                return nullptr;
+            }
+
+            if (segment_size && l.equalPartial("Pss:")) {
+                QoreString num(l.c_str() + 4);
+                pss = strtoll(num.c_str(), nullptr, 10);
+                //printd(5, "smaps: segment referenced size: %lld '%s'\n", ref_size, num.c_str());
                 continue;
+            }
+
+            if (l.equalPartial("VmFlags:")) {
+                priv_size += pss * 1024;
+                break;
             }
         }
 
-        priv_size += (end - start);
-        //printd(5, "end: %lx start: %lx ps: %lld\n", end, start, priv_size);
     }
 
     rv->setKeyValue("priv", priv_size, xsink);
+
     return rv.release();
 }
 #endif
