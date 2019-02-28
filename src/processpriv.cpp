@@ -26,6 +26,7 @@
 
 // std
 #include <exception>
+#include <cctype>
 
 // boost
 #include <boost/numeric/conversion/cast.hpp>
@@ -169,7 +170,7 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
                                   bp::std_out > m_out_pipe,
                                   bp::std_err > m_err_pipe,
                                   bp::std_in < m_in_pipe,
-			                      m_asio_ctx);
+                                              m_asio_ctx);
 
         // create async read operations
         boost::asio::async_read(m_out_pipe, m_out_asiobuf, m_on_stdout_complete);
@@ -595,15 +596,16 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoLinux(int pid, ExceptionSink* xsi
     {
         QoreStringMaker str("/proc/%d/smaps", pid);
         if (f.open(str.c_str())) {
-            xsink->raiseErrnoException("PROCESS-GETMEMORYINFO-ERROR", errno, "could not read virtual shared memory map for PID %d", pid);
+            xsink->raiseErrnoException("PROCESS-GETMEMORYINFO-ERROR", errno, "1: could not read virtual shared memory map for PID %d", pid);
             return nullptr;
         }
     }
 
     int64 priv_size = 0;
-
+    bool need_line = true;
+    
     while (true) {
-        if (f.readLine(l)) {
+        if (need_line && f.readLine(l)) {
             break;
         }
 
@@ -647,25 +649,33 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoLinux(int pid, ExceptionSink* xsi
 
         // read in segment attributes
         size_t pss = 0;
+        bool eof = false;
         while (true) {
             if (f.readLine(l)) {
-                xsink->raiseErrnoException("PROCESS-GETMEMORYINFO-ERROR", errno, "could not read virtual shared memory map for PID %d", pid);
-                return nullptr;
+                eof = true;
+                break;
             }
 
+            if (islower(l[0])) {
+                need_line = false;
+                break;
+            }
+            
             if (segment_size && l.equalPartial("Pss:")) {
                 QoreString num(l.c_str() + 4);
                 pss = strtoll(num.c_str(), nullptr, 10);
-                //printd(5, "smaps: segment referenced size: %lld '%s'\n", ref_size, num.c_str());
+                priv_size += pss * 1024;
+                printd(0, "smaps: segment referenced size: %lld '%s'\n", ref_size, num.c_str());
                 continue;
             }
 
             if (l.equalPartial("VmFlags:")) {
-                priv_size += pss * 1024;
                 break;
             }
         }
-
+        if (eof) {
+            break;
+        }
     }
 
     rv->setKeyValue("priv", priv_size, xsink);
