@@ -596,7 +596,7 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoLinux(int pid, ExceptionSink* xsi
     {
         QoreStringMaker str("/proc/%d/smaps", pid);
         if (f.open(str.c_str())) {
-            xsink->raiseErrnoException("PROCESS-GETMEMORYINFO-ERROR", errno, "1: could not read virtual shared memory map for PID %d", pid);
+            xsink->raiseErrnoException("PROCESS-GETMEMORYINFO-ERROR", errno, "could not read virtual shared memory map '%s' for PID %d", str.c_str(), pid);
             return nullptr;
         }
     }
@@ -665,7 +665,7 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoLinux(int pid, ExceptionSink* xsi
                 QoreString num(l.c_str() + 4);
                 pss = strtoll(num.c_str(), nullptr, 10);
                 priv_size += pss * 1024;
-                printd(0, "smaps: segment referenced size: %lld '%s'\n", ref_size, num.c_str());
+                //printd(5, "smaps: segment referenced size: %lld '%s'\n", priv_size, num.c_str());
                 continue;
             }
 
