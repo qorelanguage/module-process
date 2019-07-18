@@ -12,6 +12,10 @@
 our *softbool VERBOSE;
 our Main MAIN;
 
+class EmptyClass {
+    constructor() {}
+}
+
 public class Main inherits QUnit::Test {
     private {
         # prefix to find other test scripts
@@ -21,6 +25,7 @@ public class Main inherits QUnit::Test {
             "DEFAULT" : (
                 "testTrue" : "test_true.q",
                 "testSleep" : "test_sleep.q",
+                "testOutput": "test_output.q",
             ),
             "LINUX" : (
                 "searchPathTest_in" : "ls",
@@ -74,6 +79,9 @@ public class Main inherits QUnit::Test {
         addTestCase("Wait timeout test", \waitTimeoutTest());
         addTestCase("Mem and checkPid test", \memoryAndCheckPidTest());
         addTestCase("Terminate test", \terminateTest());
+        addTestCase("Output redirect test", \outputRedirectTest());
+        addTestCase("Output redirect negative test", \outputRedirectNegativeTest());
+        addTestCase("Output redirect normal read test", \outputRedirectReadTest());
 
         # Return for compatibility with test harness that checks return value.
         set_return_value(main());
@@ -599,6 +607,96 @@ public class Main inherits QUnit::Test {
         else {
             assertThrows("PROCESS-WAITFORTERMINATION-UNSUPPORTED-ERROR", \Process::waitForTermination(), -10);
         }
+    }
+
+    outputRedirectTest() {
+        string stdoutFilePath = tmp_location() + DirSep + get_random_string();
+        string stderrFilePath = tmp_location() + DirSep + get_random_string();
+        File stdoutFile();
+        File stderrFile();
+
+        stdoutFile.open2(stdoutFilePath, O_WRONLY | O_TRUNC | O_CREAT);
+        on_exit try {
+            unlink(stdoutFilePath);
+        }
+        catch (ex) {}
+
+        stderrFile.open2(stderrFilePath, O_WRONLY | O_TRUNC | O_CREAT);
+        on_exit try {
+            unlink(stderrFilePath);
+        }
+        catch (ex) {}
+
+        Process p(
+            getTestValue("testOutput"),
+            {
+                "path": (m_prefix,),
+                "stdout": stdoutFile,
+                "stderr": stderrFile,
+            }
+        );
+        stdoutFile.close();
+        stderrFile.close();
+
+        p.wait();
+
+        stdoutFile.open2(stdoutFilePath, O_RDONLY);
+        stderrFile.open2(stderrFilePath, O_RDONLY);
+
+        assertEq("stdout", stdoutFile.readLine());
+        assertEq("stderr", stderrFile.readLine());
+    }
+
+    outputRedirectNegativeTest() {
+        EmptyClass obj();
+        assertThrows("PROCESS-OPTIONS-ERROR", sub() { Process p("test", {"stdout": 2}); p.wait(); });
+        assertThrows("PROCESS-OPTIONS-ERROR", sub() { Process p("test", {"stdout": new File()}); p.wait(); });
+
+        assertThrows("PROCESS-OPTIONS-ERROR", sub() { Process p("test", {"stderr": 2}); p.wait(); });
+        assertThrows("PROCESS-OPTIONS-ERROR", sub() { Process p("test", {"stderr": new File()}); p.wait(); });
+
+        try {
+            Process p("test", {"stdout": obj}); p.wait();
+        }
+        catch (hash<ExceptionInfo> ex) {
+            assertTrue(ex.err == "OBJECT-ALREADY-DELETED");
+            assertTrue(ex.next.err == "PROCESS-OPTIONS-ERROR");
+        }
+        try {
+            Process p("test", {"stderr": obj}); p.wait();
+        }
+        catch (hash<ExceptionInfo> ex) {
+            assertTrue(ex.err == "OBJECT-ALREADY-DELETED");
+            assertTrue(ex.next.err == "PROCESS-OPTIONS-ERROR");
+        }
+    }
+
+    outputRedirectReadTest() {
+        string stdoutFilePath = tmp_location() + DirSep + get_random_string();
+        string stderrFilePath = tmp_location() + DirSep + get_random_string();
+        File stdoutFile();
+        File stderrFile();
+
+        stdoutFile.open2(stdoutFilePath, O_WRONLY | O_TRUNC | O_CREAT);
+        on_exit try {
+            unlink(stdoutFilePath);
+        }
+        catch (ex) {}
+
+        stderrFile.open2(stderrFilePath, O_WRONLY | O_TRUNC | O_CREAT);
+        on_exit try {
+            unlink(stderrFilePath);
+        }
+        catch (ex) {}
+
+        Process p(getTestValue("testSleep"), (2,), {"path": (m_prefix,)});
+        stdoutFile.close();
+        stderrFile.close();
+
+        assertNothing(p.readStdout(1000));
+        assertNothing(p.readStderr(1000));
+
+        p.wait();
     }
 }
 

@@ -95,89 +95,39 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
         return;
     }
 
+    int stdoutFD = optsStdout("stdout", opts, xsink);
+    int stderrFD = optsStdout("stderr", opts, xsink);
+    if (xsink->isException()) {
+        return;
+    }
+
+    FILE* stdoutFile = nullptr;
+    FILE* stderrFile = nullptr;
+    if (stdoutFD != -1) {
+        stdoutFile = fdopen(stdoutFD, "w");
+    }
+    if (stderrFD != -1) {
+        stderrFile = fdopen(stderrFD, "w");
+    }
+
     // process exe arguments
     std::vector<std::string> exeArgs;
     processArgs(arguments, exeArgs);
-    if (exeArgs.size() == 0) { // make sure that there is at least one argument
-        exeArgs.push_back("");
-    }
 
-    // stdout setup
-    m_on_stdout_complete = [this](const boost::system::error_code& ec, size_t n) {
-        // append read data to output buffer
-        m_out_buf.append(m_out_vec.data(), n);
-
-        // continue reading if no error
-        if (!ec) {
-            boost::asio::async_read(m_out_pipe, m_out_asiobuf, m_on_stdout_complete);
-        }
-    };
-
-    // stderr setup
-    m_on_stderr_complete = [this](const boost::system::error_code& ec, size_t n) {
-        // append read data to output buffer
-        m_err_buf.append(m_err_vec.data(), n);
-
-        // continue reading if no error
-        if (!ec) {
-            boost::asio::async_read(m_err_pipe, m_err_asiobuf, m_on_stderr_complete);
-        }
-    };
-
-    // stdin setup
-    m_on_stdin_complete = [this](const boost::system::error_code& ec, size_t n) {
-        std::lock_guard<std::mutex> lock(m_async_write_mtx);
-
-        // delete already written data from stdin vector
-        m_in_vec.erase(m_in_vec.begin(), m_in_vec.begin() + n);
-
-        // check error
-        if (ec) {
-            --m_async_write_running;
-            return;
-        }
-
-        // if there is remaining data, try to write it
-        if (m_in_vec.size()) {
-            m_in_asiobuf = boost::asio::buffer(m_in_vec);
-            boost::asio::async_write(m_in_pipe, m_in_asiobuf, m_on_stdin_complete);
-            return;
-        }
-
-        // check if there is new data ready to be written
-        if (m_in_buf.size()) {
-            prepareStdinBuffer();
-            boost::asio::async_write(m_in_pipe, m_in_asiobuf, m_on_stdin_complete);
-            return;
-        }
-
-        --m_async_write_running;
-    };
+    // stdout, stderr and stdin closures setup
+    prepareClosures();
 
     // launch child process
     try {
-        m_process = new bp::child(bp::exe = p.string(),
-                                  bp::args = exeArgs,
-                                  bp::env = env,
-                                  bp::start_dir = cwd.c_str(),
-                                  QoreProcessHandler(xsink,
-                                                     on_success,
-                                                     on_setup,
-                                                     on_error,
-                                                     on_fork_error,
-                                                     on_exec_setup,
-                                                     on_exec_error),
-                                  bp::std_out > m_out_pipe,
-                                  bp::std_err > m_err_pipe,
-                                  bp::std_in < m_in_pipe,
-                                              m_asio_ctx);
+        QoreProcessHandler handler(xsink,
+                                   on_success,
+                                   on_setup,
+                                   on_error,
+                                   on_fork_error,
+                                   on_exec_setup,
+                                   on_exec_error);
 
-        // create async read operations
-        boost::asio::async_read(m_out_pipe, m_out_asiobuf, m_on_stdout_complete);
-        boost::asio::async_read(m_err_pipe, m_err_asiobuf, m_on_stderr_complete);
-
-        // launch async operations
-        m_asio_ctx_run_future = std::async(std::launch::async, [this]{ m_asio_ctx.run(); });
+        launchChild(p, exeArgs, env, cwd.c_str(), handler, stdoutFile, stderrFile);
     }
     catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-CONSTRUCTOR-ERROR", ex.what());
@@ -273,6 +223,57 @@ std::string ProcessPriv::optsCwd(const QoreHashNode* opts, ExceptionSink* xsink)
     return ret;
 }
 
+int ProcessPriv::optsStdout(const char* keyName, const QoreHashNode* opts, ExceptionSink* xsink) {
+    int ret = -1;
+
+    if (opts && opts->existsKey(keyName)) {
+        QoreValue n = opts->getKeyValue(keyName);
+        if (n.getType() != NT_OBJECT) {
+            xsink->raiseException("PROCESS-OPTIONS-ERROR",
+                                  "'%s' option must be an object, got: '%s'(%d)",
+                                  keyName,
+                                  n.getTypeName(),
+                                  n.getType()
+            );
+            return ret;
+        }
+
+        AbstractQoreNode* node = n.getInternalNode();
+        if (!node) {
+            xsink->raiseException("PROCESS-OPTIONS-ERROR",
+                                  "'%s' option must be an object, got: '%s'(%d)",
+                                  keyName,
+                                  n.getTypeName(),
+                                  n.getType()
+            );
+            return ret;
+        }
+
+        QoreObject* obj = static_cast<QoreObject*>(node);
+        PrivateDataRefHolder<File> file(obj, CID_FILE, xsink);
+        if (*xsink) {
+            xsink->raiseException("PROCESS-OPTIONS-ERROR",
+                                  "'%s' option must be a File object",
+                                  keyName
+            );
+            return ret;
+        }
+
+        if (!file->isOpen()) {
+            xsink->raiseException("PROCESS-OPTIONS-ERROR",
+                                  "'%s' option must be an open File object, got: '%s'(%d)",
+                                  keyName,
+                                  n.getTypeName(),
+                                  n.getType()
+            );
+            return ret;
+        }
+        ret = file->getFD();
+    }
+
+    return ret;
+}
+
 boost::filesystem::path ProcessPriv::optsPath(const char* command, const QoreHashNode* opts, ExceptionSink* xsink) {
     boost::filesystem::path ret;
 
@@ -328,12 +329,16 @@ bool ProcessPriv::processCheck(ExceptionSink* xsink) {
 }
 
 void ProcessPriv::processArgs(const QoreListNode* arguments, std::vector<std::string>& out) {
-    if (!arguments)
-        return;
+    if (arguments) {
+        for (qore_size_t i = 0; i < arguments->size(); i++) {
+            QoreStringNodeValueHelper s(arguments->retrieveEntry(i));
+            out.push_back(s->getBuffer());
+        }
+    }
 
-    for (qore_size_t i = 0; i < arguments->size(); i++) {
-        QoreStringNodeValueHelper s(arguments->retrieveEntry(i));
-        out.push_back(s->getBuffer());
+    // make sure that there is at least one argument
+    if (out.size() == 0) {
+        out.push_back("");
     }
 }
 
@@ -343,6 +348,125 @@ void ProcessPriv::prepareStdinBuffer() {
 
     // create new ASIO buffer
     m_in_asiobuf = boost::asio::buffer(m_in_vec);
+}
+
+void ProcessPriv::prepareClosures() {
+    // stdout setup
+    m_on_stdout_complete = [this](const boost::system::error_code& ec, size_t n) {
+        // append read data to output buffer
+        m_out_buf.append(m_out_vec.data(), n);
+
+        // continue reading if no error
+        if (!ec) {
+            boost::asio::async_read(m_out_pipe, m_out_asiobuf, m_on_stdout_complete);
+        }
+    };
+
+    // stderr setup
+    m_on_stderr_complete = [this](const boost::system::error_code& ec, size_t n) {
+        // append read data to output buffer
+        m_err_buf.append(m_err_vec.data(), n);
+
+        // continue reading if no error
+        if (!ec) {
+            boost::asio::async_read(m_err_pipe, m_err_asiobuf, m_on_stderr_complete);
+        }
+    };
+
+    // stdin setup
+    m_on_stdin_complete = [this](const boost::system::error_code& ec, size_t n) {
+        std::lock_guard<std::mutex> lock(m_async_write_mtx);
+
+        // delete already written data from stdin vector
+        m_in_vec.erase(m_in_vec.begin(), m_in_vec.begin() + n);
+
+        // check error
+        if (ec) {
+            --m_async_write_running;
+            return;
+        }
+
+        // if there is remaining data, try to write it
+        if (m_in_vec.size()) {
+            m_in_asiobuf = boost::asio::buffer(m_in_vec);
+            boost::asio::async_write(m_in_pipe, m_in_asiobuf, m_on_stdin_complete);
+            return;
+        }
+
+        // check if there is new data ready to be written
+        if (m_in_buf.size()) {
+            prepareStdinBuffer();
+            boost::asio::async_write(m_in_pipe, m_in_asiobuf, m_on_stdin_complete);
+            return;
+        }
+
+        --m_async_write_running;
+    };
+}
+
+void ProcessPriv::launchChild(boost::filesystem::path p,
+                             std::vector<std::string>& args,
+                             bp::environment env,
+                             const char* cwd,
+                             QoreProcessHandler& handler,
+                             FILE* stdoutFile,
+                             FILE* stderrFile)
+{
+    if (stdoutFile && stderrFile) {
+        m_process = new bp::child(bp::exe = p.string(),
+                                  bp::args = args,
+                                  bp::env = env,
+                                  bp::start_dir = cwd,
+                                  handler,
+                                  bp::std_out > stdoutFile,
+                                  bp::std_err > stderrFile,
+                                  bp::std_in < m_in_pipe,
+                                  m_asio_ctx);
+    }
+    else if (stdoutFile) {
+        m_process = new bp::child(bp::exe = p.string(),
+                                  bp::args = args,
+                                  bp::env = env,
+                                  bp::start_dir = cwd,
+                                  handler,
+                                  bp::std_out > stdoutFile,
+                                  bp::std_err > m_err_pipe,
+                                  bp::std_in < m_in_pipe,
+                                  m_asio_ctx);
+    }
+    else if (stderrFile) {
+        m_process = new bp::child(bp::exe = p.string(),
+                                  bp::args = args,
+                                  bp::env = env,
+                                  bp::start_dir = cwd,
+                                  handler,
+                                  bp::std_out > m_out_pipe,
+                                  bp::std_err > stderrFile,
+                                  bp::std_in < m_in_pipe,
+                                  m_asio_ctx);
+    }
+    else {
+        m_process = new bp::child(bp::exe = p.string(),
+                                  bp::args = args,
+                                  bp::env = env,
+                                  bp::start_dir = cwd,
+                                  handler,
+                                  bp::std_out > m_out_pipe,
+                                  bp::std_err > m_err_pipe,
+                                  bp::std_in < m_in_pipe,
+                                  m_asio_ctx);
+    }
+
+    // create async read operations
+    if (!stdoutFile) {
+        boost::asio::async_read(m_out_pipe, m_out_asiobuf, m_on_stdout_complete);
+    }
+    if (!stderrFile) {
+        boost::asio::async_read(m_err_pipe, m_err_asiobuf, m_on_stderr_complete);
+    }
+
+    // launch async operations
+    m_asio_ctx_run_future = std::async(std::launch::async, [this]{ m_asio_ctx.run(); });
 }
 
 int ProcessPriv::exitCode(ExceptionSink* xsink) {

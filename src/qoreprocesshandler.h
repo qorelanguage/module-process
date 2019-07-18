@@ -53,6 +53,29 @@ public:
     {
     }
 
+    QoreProcessHandler(QoreProcessHandler& old) :
+        m_xsink(old.m_xsink),
+        m_on_success(*old.m_on_success, old.m_xsink),
+        m_on_setup(*old.m_on_setup, old.m_xsink),
+        m_on_error(*old.m_on_error, old.m_xsink),
+        m_on_fork_error(*old.m_on_fork_error, old.m_xsink),
+        m_on_exec_setup(*old.m_on_exec_setup, old.m_xsink),
+        m_on_exec_error(*old.m_on_exec_error, old.m_xsink)
+    {
+        if (m_on_success)
+            m_on_success->ref();
+        if (m_on_setup)
+            m_on_setup->ref();
+        if (m_on_error)
+            m_on_error->ref();
+        if (m_on_fork_error)
+            m_on_fork_error->ref();
+        if (m_on_exec_setup)
+            m_on_exec_setup->ref();
+        if (m_on_exec_error)
+            m_on_exec_error->ref();
+    }
+
     template<typename Executor>
     void on_success(Executor& exec) const {
         call("on_success", *m_on_success, exec, std::error_code());
