@@ -271,7 +271,7 @@ int ProcessPriv::optsStdout(const char* keyName, const QoreHashNode* opts, Excep
             );
             return ret;
         }
-        ret = file->getFD();
+        ret = file->detachFd();
     }
 
     return ret;
