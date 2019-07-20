@@ -126,6 +126,8 @@ p.wait();
     - \c path : a list of strings. It's a custom search path to find \c command
                 in the Process constructors. If it's not given, parent's ENV PATH is used.
                 This value is not passed to child's ENV at all.
+    - \c stdout : an opened Qore \c File object. Standard output of the process will be redirected to this file.
+    - \c stderr : an opened Qore \c File object. Standard error output of the process will be redirected to this file.
     - \c on_success : a code/call closure with prototype <tt>sub (hash e)</tt>.
                       This handler is invoked if launching the process has succeeded.
     - \c on_setup : a code/call closure with prototype <tt>sub (hash e)</tt>.

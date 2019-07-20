@@ -45,6 +45,8 @@
 // qore
 #include <qore/Qore.h>
 
+#include "qoreprocesshandler.h"
+
 DLLLOCAL extern qore_classid_t CID_PROCESS;
 DLLLOCAL extern QoreClass* QC_PROCESS;
 
@@ -106,6 +108,8 @@ private:
     DLLLOCAL bp::environment optsEnv(const QoreHashNode* opts, ExceptionSink* xsink);
     DLLLOCAL std::string optsCwd(const QoreHashNode* opts, ExceptionSink* xsink);
 
+    DLLLOCAL int optsStdout(const char* keyName, const QoreHashNode* opts, ExceptionSink* xsink);
+
     DLLLOCAL bool processCheck(ExceptionSink* xsink);
 
     //! Process exe arguments passed through constructor.
@@ -113,6 +117,16 @@ private:
 
     //! Prepare stdin ASIO buffer for use in async_write operation.
     DLLLOCAL void prepareStdinBuffer();
+
+    DLLLOCAL void prepareClosures();
+    
+    DLLLOCAL void launchChild(boost::filesystem::path p,
+                              std::vector<std::string>& args,
+                              bp::environment env,
+                              const char* cwd,
+                              QoreProcessHandler& handler,
+                              FILE* stdoutFile,
+                              FILE* stderrFile);
 
 #ifdef __linux__
     DLLLOCAL static QoreHashNode* getMemorySummaryInfoLinux(int pid, ExceptionSink* xsink);

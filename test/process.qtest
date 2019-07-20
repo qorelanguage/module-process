@@ -12,6 +12,10 @@
 our *softbool VERBOSE;
 our Main MAIN;
 
+class EmptyClass {
+    constructor() {}
+}
+
 public class Main inherits QUnit::Test {
     private {
         # prefix to find other test scripts
@@ -21,6 +25,7 @@ public class Main inherits QUnit::Test {
             "DEFAULT" : (
                 "testTrue" : "test_true.q",
                 "testSleep" : "test_sleep.q",
+                "testOutput": "test_output.q",
             ),
             "LINUX" : (
                 "searchPathTest_in" : "ls",
@@ -74,6 +79,9 @@ public class Main inherits QUnit::Test {
         addTestCase("Wait timeout test", \waitTimeoutTest());
         addTestCase("Mem and checkPid test", \memoryAndCheckPidTest());
         addTestCase("Terminate test", \terminateTest());
+        addTestCase("Output redirect test", \outputRedirectTest());
+        addTestCase("Output redirect negative test", \outputRedirectNegativeTest());
+        addTestCase("Output redirect normal read test", \outputRedirectReadTest());
 
         # Return for compatibility with test harness that checks return value.
         set_return_value(main());
@@ -129,7 +137,7 @@ public class Main inherits QUnit::Test {
             Process::searchPath("some-not-existing-exec");
             fail();
         }
-        catch (hash ex) {
+        catch (hash<ExceptionInfo> ex) {
             assertEq("PROCESS-SEARCH-PATH-ERROR", ex.err, "some-not-existing-exec for searchPath");
         }
     }
@@ -163,7 +171,7 @@ public class Main inherits QUnit::Test {
             p1.wait();
             fail();
         }
-        catch (hash ex) {
+        catch (hash<ExceptionInfo> ex) {
             assertEq("PROCESS-SEARCH-PATH-ERROR", ex.err, "it should not be found");
         }
 
@@ -191,7 +199,7 @@ public class Main inherits QUnit::Test {
             p.wait();
             fail();
         }
-        catch (hash ex) {
+        catch (hash<ExceptionInfo> ex) {
             assertEq("PROCESS-SEARCH-PATH-ERROR", ex.err, "some-not-existing-exec for Process");
         }
     }
@@ -394,8 +402,7 @@ public class Main inherits QUnit::Test {
                     "on_success" : 1,
                 );
             Process p(getTestValue("testTrue"), opts);
-        }
-        catch (hash ex) {
+        } catch (hash<ExceptionInfo> ex) {
             assertEq("PROCESS-OPTIONS-ERROR", ex.err, "on_success using integer: err");
             assertEq("executor 'on_success' required code as value, got: 'integer'(1)",
                      ex.desc,
@@ -409,8 +416,7 @@ public class Main inherits QUnit::Test {
                     "on_success" : sub (int i) {},
                 );
             Process p(getTestValue("testTrue"), opts);
-        }
-        catch (hash ex) {
+        } catch (hash<ExceptionInfo> ex) {
             assertEq("RUNTIME-TYPE-ERROR", ex.err, "on_success using code with no hash as arg: err");
             assertEq("parameter 1 ('i') expects type 'int', but got type 'hash' instead",
                      ex.desc,
@@ -463,8 +469,7 @@ public class Main inherits QUnit::Test {
             Process p(getTestValue("testTrue"), opts);
             p.wait();
             fail();
-        }
-        catch (hash ex) {
+        } catch (hash<ExceptionInfo> ex) {
             assertEq("PROCESS-OPTIONS-ERROR", ex.err, "envVarsNegativeTest negative: err");
             assertEq("Environment variables option must be a hash, got: 'integer'(1)",
                      ex.desc,
@@ -496,8 +501,7 @@ public class Main inherits QUnit::Test {
             Process p(getTestValue("testTrue"), opts);
             p.wait();
             fail();
-        }
-        catch (hash ex) {
+        } catch (hash<ExceptionInfo> ex) {
             assertEq("PROCESS-SEARCH-PATH-ERROR", ex.err, "ex.err check");
             assertEq("Command 'test_true.q' cannot be found in PATH", ex.desc, "ex.desc check");
         }
@@ -600,6 +604,89 @@ public class Main inherits QUnit::Test {
             assertThrows("PROCESS-WAITFORTERMINATION-UNSUPPORTED-ERROR", \Process::waitForTermination(), -10);
         }
     }
+
+    outputRedirectTest() {
+        string stdoutFilePath = tmp_location() + DirSep + get_random_string();
+        string stderrFilePath = tmp_location() + DirSep + get_random_string();
+        File stdoutFile();
+        File stderrFile();
+
+        stdoutFile.open2(stdoutFilePath, O_WRONLY | O_TRUNC | O_CREAT);
+        on_exit try {
+            unlink(stdoutFilePath);
+        } catch () {}
+
+        stderrFile.open2(stderrFilePath, O_WRONLY | O_TRUNC | O_CREAT);
+        on_exit try {
+            unlink(stderrFilePath);
+        } catch () {}
+
+        Process p(
+            getTestValue("testOutput"),
+            {
+                "path": (m_prefix,),
+                "stdout": stdoutFile,
+                "stderr": stderrFile,
+            }
+        );
+        stdoutFile.close();
+        stderrFile.close();
+
+        p.wait();
+
+        stdoutFile.open2(stdoutFilePath, O_RDONLY);
+        stderrFile.open2(stderrFilePath, O_RDONLY);
+
+        assertEq("stdout", stdoutFile.readLine());
+        assertEq("stderr", stderrFile.readLine());
+    }
+
+    outputRedirectNegativeTest() {
+        EmptyClass obj();
+        assertThrows("PROCESS-OPTIONS-ERROR", sub() { Process p("test", {"stdout": 2}); p.wait(); });
+        assertThrows("PROCESS-OPTIONS-ERROR", sub() { Process p("test", {"stdout": new File()}); p.wait(); });
+
+        assertThrows("PROCESS-OPTIONS-ERROR", sub() { Process p("test", {"stderr": 2}); p.wait(); });
+        assertThrows("PROCESS-OPTIONS-ERROR", sub() { Process p("test", {"stderr": new File()}); p.wait(); });
+
+        assertThrows("PROCESS-OPTIONS-ERROR", "stdout.*EmptyClass", sub () { Process p("test", {"stdout": obj}); });
+        assertThrows("PROCESS-OPTIONS-ERROR", "stderr.*EmptyClass", sub () { Process p("test", {"stderr": obj}); });
+
+        File f0();
+        File f1 = f0;
+        delete f1;
+        assertThrows("OBJECT-ALREADY-DELETED", "stdout.*File", sub () { Process p("test", {"stdout": f0}); });
+        assertThrows("OBJECT-ALREADY-DELETED", "stderr.*File", sub () { Process p("test", {"stderr": f0}); });
+
+        assertThrows("PROCESS-OPTIONS-ERROR", "stdout.*File", sub () { Process p("test", {"stdout": f1}); });
+        assertThrows("PROCESS-OPTIONS-ERROR", "stderr.*File", sub () { Process p("test", {"stderr": f1}); });
+    }
+
+    outputRedirectReadTest() {
+        string stdoutFilePath = tmp_location() + DirSep + get_random_string();
+        string stderrFilePath = tmp_location() + DirSep + get_random_string();
+        File stdoutFile();
+        File stderrFile();
+
+        stdoutFile.open2(stdoutFilePath, O_WRONLY | O_TRUNC | O_CREAT);
+        on_exit try {
+            unlink(stdoutFilePath);
+        } catch () {}
+
+        stderrFile.open2(stderrFilePath, O_WRONLY | O_TRUNC | O_CREAT);
+        on_exit try {
+            unlink(stderrFilePath);
+        } catch () {}
+
+        Process p(getTestValue("testSleep"), (2,), {"path": (m_prefix,)});
+        stdoutFile.close();
+        stderrFile.close();
+
+        assertNothing(p.readStdout(1000));
+        assertNothing(p.readStderr(1000));
+
+        p.wait();
+    }
 }
 
 sub run_bg(Process p, Main m) {
@@ -610,7 +697,7 @@ sub run_bg(Process p, Main m) {
     try {
         p.wait();
     }
-    catch (hash ex) {
+    catch (hash<ExceptionInfo> ex) {
         m.assertEq("PROCESS-WAIT-ERROR", ex.err, "process is killed from main thread - err");
         m.assertTrue(ex.desc.regex("No child processes"), ex.desc, "process is killed from main thread - desc");
     }
