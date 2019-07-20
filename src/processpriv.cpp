@@ -230,7 +230,8 @@ int ProcessPriv::optsStdout(const char* keyName, const QoreHashNode* opts, Excep
         QoreValue n = opts->getKeyValue(keyName);
         if (n.getType() != NT_OBJECT) {
             xsink->raiseException("PROCESS-OPTIONS-ERROR",
-                                  "'%s' option must be an object, got: '%s'(%d)",
+                                  "Process constructor option '%s' must be a File object open for writing; got: " \
+                                  "type '%s'(%d) instead",
                                   keyName,
                                   n.getTypeName(),
                                   n.getType()
@@ -238,33 +239,35 @@ int ProcessPriv::optsStdout(const char* keyName, const QoreHashNode* opts, Excep
             return ret;
         }
 
-        AbstractQoreNode* node = n.getInternalNode();
-        if (!node) {
-            xsink->raiseException("PROCESS-OPTIONS-ERROR",
-                                  "'%s' option must be an object, got: '%s'(%d)",
-                                  keyName,
-                                  n.getTypeName(),
-                                  n.getType()
-            );
-            return ret;
+        // if the above returns NT_OBJECT, then the following line must succeed
+        QoreObject* obj = n.get<QoreObject>();
+
+        // see if the File class is accessible in this call
+        {
+            ClassAccess access;
+            bool in_hierarchy = obj->getClass()->inHierarchy(*QC_FILE, access);
+            if (!in_hierarchy || access == Internal) {
+                xsink->raiseException("PROCESS-OPTIONS-ERROR", "Process constructor option '%s' expecting an object " \
+                    "of class 'File'; got an object of class '%s' instead",
+                    keyName,
+                    obj->getClassName());
+                return ret;
+            }
         }
 
-        QoreObject* obj = static_cast<QoreObject*>(node);
         PrivateDataRefHolder<File> file(obj, CID_FILE, xsink);
         if (*xsink) {
-            xsink->raiseException("PROCESS-OPTIONS-ERROR",
-                                  "'%s' option must be a File object",
-                                  keyName
-            );
+            // an exception has already been thrown here
+            xsink->appendLastDescription(" (while processing Process constructor option '%s' expecting a valid File " \
+                "object open for writing)", keyName);
             return ret;
         }
 
         if (!file->isOpen()) {
             xsink->raiseException("PROCESS-OPTIONS-ERROR",
-                                  "'%s' option must be an open File object, got: '%s'(%d)",
-                                  keyName,
-                                  n.getTypeName(),
-                                  n.getType()
+                                  "Process constructor option '%s' must be an open File object; the File object " \
+                                  "passed is not open for writing",
+                                  keyName
             );
             return ret;
         }
@@ -727,7 +730,7 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoLinux(int pid, ExceptionSink* xsi
 
     int64 priv_size = 0;
     bool need_line = true;
-    
+
     while (true) {
         if (need_line && f.readLine(l)) {
             break;
@@ -784,7 +787,7 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoLinux(int pid, ExceptionSink* xsi
                 need_line = false;
                 break;
             }
-            
+
             if (segment_size && l.equalPartial("Pss:")) {
                 QoreString num(l.c_str() + 4);
                 pss = strtoll(num.c_str(), nullptr, 10);
