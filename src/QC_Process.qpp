@@ -416,7 +416,7 @@ nothing Process::write(number n) {
 
     @returns string with data or NOTHING if no data is available
  */
-*string Process::readStdout(int bytes, int timeout = 0) {
+*string Process::readStdout(int bytes, timeout timeout = 0) {
     if (bytes < 0)
         return QoreValue();
 
@@ -447,7 +447,7 @@ nothing Process::write(number n) {
 
     @returns string with data or NOTHING if no data is available
  */
-*string Process::readStderr(int bytes, int timeout = 0) {
+*string Process::readStderr(int bytes, timeout timeout = 0) {
     if (bytes < 0)
         return QoreValue();
 
