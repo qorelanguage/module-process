@@ -1,10 +1,15 @@
-this is an internal copy of boost 1.67 (required modules)
-It's used only when there is no system-wide boost available
+This is an internal copy of boost 1.71 (required modules).
+It's used only when there is no system-wide boost available.
 
 How to build it:
-- download latest boost tarball, unpack it
+- Download latest boost tarball and unpack it.
 - ./bootstrap.sh
 - ./b2 tools/bcp
+- mkdir -p ../tmp
 - ./dist/bin/bcp process ../tmp
-- copy content of tmp here
+- Copy content of tmp here.
 
+This copy is also patched for non-working group::wait_for and group::wait_until
+functions. The problem and fix/patch is described here:
+
+https://github.com/boostorg/process/issues/107
