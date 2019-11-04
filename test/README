@@ -1,6 +1,6 @@
-A test files for Qore::Process module.
+Test files for Qore::Process module.
 
 Always run process.qtest file. That's the main one.
 
-Rets of *.q files are supporting helpers to simulate IO, or ENV handling
+Rest of *.q files are supporting helpers to simulate IO, or ENV handling.
 

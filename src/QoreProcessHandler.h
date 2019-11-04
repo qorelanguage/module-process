@@ -25,14 +25,15 @@
 #ifndef QOREPROCESSHANDLER_H
 #define QOREPROCESSHANDLER_H
 
+// boost
 #include <boost/process.hpp>
 #include <boost/process/extend.hpp>
 
+// qore
 #include <qore/Qore.h>
 
 namespace bp = boost::process;
 namespace ex = boost::process::extend;
-
 
 class QoreProcessHandler : public ex::handler {
 public:
@@ -126,6 +127,7 @@ public:
         report->setKeyValue("pid", exec.proc_info.dwProcessId, m_xsink);
 #endif
         report->setKeyValue("exit", static_cast<int64>(*(exec.exit_status)), m_xsink);
+        report->setKeyValue("exit_status", static_cast<int64>(*(exec.exit_status)), m_xsink);
 
         // std::error_code& ec to hash too
         report->setKeyValue("error_code", ec.value(), m_xsink);

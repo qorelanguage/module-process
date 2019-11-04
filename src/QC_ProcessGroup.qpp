@@ -1,0 +1,187 @@
+/*
+    Qore Programming Language process Module
+
+    Copyright (C) 2003 - 2019 Qore Technologies, s.r.o.
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+*/
+
+/* -*- mode: c++; indent-tabs-mode: nil -*- */
+
+// std
+#include <cstdlib>
+
+// qore
+#include <qore/Qore.h>
+
+// module
+#include "ProcessGroup.h"
+#include "unix-config.h"
+
+#if defined(HAVE_KILL) || defined(HAVE_KILLPG)
+#define HAVE_PROCESSGROUP_KILL 1
+#define HAVE_PROCESSGROUP_TERMINATE 1
+#else
+#define HAVE_PROCESSGROUP_KILL 0
+#define HAVE_PROCESSGROUP_TERMINATE 0
+#endif
+
+DLLLOCAL extern const TypedHashDecl* hashdeclMemorySummaryInfo;
+
+/** @defgroup process_constants Process Constants
+    Constants related to process module functionality
+ */
+//@{
+//! defines if the static @ref Qore::Process::ProcessGroup::kill() "ProcessGroup::kill()" method is available on the current platform
+const HAVE_PROCESSGROUP_KILL = bool(HAVE_PROCESSGROUP_KILL);
+
+//! defines if the static @ref Qore::Process::ProcessGroup::terminate() "ProcessGroup::terminate()" method is available on the current platform
+const HAVE_PROCESSGROUP_TERMINATE = bool(HAVE_PROCESSGROUP_TERMINATE);
+//@}
+
+//! System process group wrapper.
+/** 
+    A process group is a group of one or more processes.
+
+    On Posix platforms, every process group has it's identifier called PGID.
+
+    Groups can be used to wait for all the child processes to exit or to easily
+    stop or send a signal to all the child processes.
+
+    The ProcessGroup class also allows you to terminate or send signals
+    to processes, given the group's PGID.
+
+    The child processes will be destroyed immediately when an instance of
+    ProcessGroup class is destroyed, except if @ref detach() method was called.
+
+    The simplest usage of ProcessGroup is:
+
+    @code
+%new-style
+%requires process
+
+ProcessGroup g();
+Process p("ls", {"pgroup": g});
+g.wait();
+    @endcode
+ */
+qclass ProcessGroup [dom=EXTERNAL_PROCESS; arg=ProcessGroup* priv; ns=Qore::Process];
+
+//! Construct a new process group.
+/**
+ */
+ProcessGroup::constructor() {
+    self->setPrivate(CID_PROCESSGROUP, new ProcessGroup(xsink));
+}
+
+//! Copy method - instance of this class cannot be copied.
+/**
+    @throw PROCESS-GROUP-COPY-ERROR Copying of ProcessGroup objects is not supported
+ */
+ProcessGroup::copy() {
+   xsink->raiseException("PROCESS-GROUP-COPY-ERROR", "copying ProcessGroup objects is currently not supported");
+}
+
+//! Check if this handle holds a valid process group.
+/** This only means that the handle does or did exist.
+
+    @return \c True in case of valid process group handle
+
+    @throw PROCESS-GROUP-CHECK-ERROR process group was not used for any process and therefore calling any of it's methods would produce undefined behavior
+    @throw PROCESS-GROUP-VALID-ERROR an error happened while checking if the handle was valid
+ */
+bool ProcessGroup::valid() {
+    return priv->valid(xsink);
+}
+
+//! Wait for the child processes of the group to exit.
+/**
+    @throw PROCESS-GROUP-CHECK-ERROR process group was not used for any process and therefore calling any of it's methods would produce undefined behavior
+    @throw PROCESS-GROUP-WAIT-ERROR an error happened while waiting for the child processes to exit
+
+    @return always returns \c True to keep compatibility with wait(timeout) version
+ */
+bool ProcessGroup::wait() {
+    return priv->wait(xsink);
+}
+
+//! Wait for the child processes of the process group to exit.
+/**
+    @param t a timeout to wait
+
+    @throw PROCESS-GROUP-CHECK-ERROR process group was not used for any process and therefore calling any of it's methods would produce undefined behavior
+    @throw PROCESS-GROUP-WAIT-ERROR an error happened while waiting for the child processes to exit
+
+    @return \c True if group processes exited while waiting, \c False in case of timeout
+ */
+bool ProcessGroup::wait(timeout t) {
+    return priv->wait(t, xsink);
+}
+
+//! Detach the process group. Child processes will not be affected after this handle dies.
+/**
+    @throw PROCESS-GROUP-CHECK-ERROR process group was not used for any process and therefore calling any of it's methods would produce undefined behavior
+ */
+nothing ProcessGroup::detach() {
+    priv->detach(xsink);
+}
+
+//! Terminate the process group.
+/** This function will cause child processes to unconditionally and immediately exit.
+
+    @throw PROCESS-GROUP-CHECK-ERROR process group was not used for any process and therefore calling any of it's methods would produce undefined behavior
+    @throw PROCESS-GROUP-TERMINATE-ERROR an error happened while terminating the group's processes
+ */
+nothing ProcessGroup::terminate() {
+    priv->terminate(xsink);
+}
+
+//! Send a sginal to a process group given it's pgid.
+/**
+    @param pgid id of the process group to kill (send a signal to)
+    @param signal signal number to use
+
+    @throw PROCESS-GROUP-KILL-ERROR insufficient permissions to kill process group
+    @throw INVALID-PGID-ERROR invalid pgid
+    @throw PROCESS-GROUP-KILL-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
+
+    @note this method will also clean up any child processes if necessary (i.e. on Unix-like platforms) in case the process killed is a child of the current process
+
+    @see
+    - @ref HAVE_PROCESSGROUP_KILL
+*/
+static nothing ProcessGroup::kill(int pgid, int signal) {
+    ProcessGroup::kill(pgid, signal, xsink);
+}
+
+//! Terminate a process group unconditionally given it's pgid.
+/**
+    @param pgid id of the process group to terminate
+
+    @throw PROCESS-GROUP-TERMINATE-ERROR insufficient permissions to terminate process group
+    @throw INVALID-PGID-ERROR invalid pgid
+    @throw PROCESS-GROUP-TERMINATE-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
+
+    @see
+    - @ref HAVE_PROCESSGROUP_TERMINATE
+    - @ref ProcessGroup::terminate()
+*/
+static nothing ProcessGroup::terminate(int pgid) {
+    ProcessGroup::terminate(pgid, xsink);
+}

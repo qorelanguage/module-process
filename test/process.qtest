@@ -82,6 +82,7 @@ public class Main inherits QUnit::Test {
         addTestCase("Output redirect test", \outputRedirectTest());
         addTestCase("Output redirect negative test", \outputRedirectNegativeTest());
         addTestCase("Output redirect normal read test", \outputRedirectReadTest());
+        addTestCase("ProcessGroup test", \groupTest());
 
         # Return for compatibility with test harness that checks return value.
         set_return_value(main());
@@ -304,7 +305,6 @@ public class Main inherits QUnit::Test {
                         printf("    on_success attribute: %n\n", e);
 
                     assertEq("on_success", e.name, "name check");
-                    assertEq(127, e.exit, "on_success exit code check");
                     assertEq(m_prefix + getTestValue("testTrue"), e.exe, "on_success exe check");
                     assertEq(0, e.error_code, "on_success error_code check");
                     assertEq(getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
@@ -347,7 +347,6 @@ public class Main inherits QUnit::Test {
             printf("executorMethod: %n\n", e);
 
         assertEq("on_success", e.name, "name check");
-        assertEq(127, e.exit, "on_success exit code check");
         assertEq(m_prefix + getTestValue("testTrue"), e.exe, "on_success exe check");
         assertEq(0, e.error_code, "on_success error_code check");
         assertEq(getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
@@ -359,7 +358,6 @@ public class Main inherits QUnit::Test {
             printf("executorStaticMethod: %n\n", e);
 
         MAIN.assertEq("on_success", e.name, "name check");
-        MAIN.assertEq(127, e.exit, "on_success exit code check");
         MAIN.assertEq(MAIN.prefix() + MAIN.getTestValue("testTrue"), e.exe, "on_success exe check");
         MAIN.assertEq(0, e.error_code, "on_success error_code check");
         MAIN.assertEq(MAIN.getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
@@ -372,7 +370,6 @@ public class Main inherits QUnit::Test {
             printf("executorNoHash: %n\n", e);
 
         assertEq("on_success", e.name, "name check");
-        assertEq(127, e.exit, "on_success exit code check");
         assertEq(m_prefix + getTestValue("testTrue"), e.exe, "on_success exe check");
         assertEq(0, e.error_code, "on_success error_code check");
         assertEq(getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
@@ -687,6 +684,171 @@ public class Main inherits QUnit::Test {
 
         p.wait();
     }
+
+    groupTest() {
+        { # simple test
+            ProcessGroup g();
+            Process p(getTestValue("simpleTest_exe"), getTestValue("simpleTest_arg"));
+            assertEq(True, p.id() > 0, "PID must be given");
+            assertEq(True, p.valid(), "process must be valid");
+
+            p.wait();
+            assertEq(0, p.exitCode());
+        }
+
+        { # group wait
+            ProcessGroup g();
+            Process p(getTestValue("testSleep"), 1, {
+                "path": (m_prefix,),
+                "pgroup": g
+            });
+
+            g.wait();
+            assertFalse(p.running());
+            assertEq(0, p.exitCode());
+        }
+
+        { # group wait timeout
+            ProcessGroup g();
+            Process p(getTestValue("testSleep"), 2, {
+                "path": (m_prefix,),
+                "pgroup": g
+            });
+
+            assertFalse(g.wait(100));
+            g.wait();
+            assertThrows("PROCESS-WAIT-ERROR", "No child process", sub() { p.wait(); });
+            assertEq(0, p.exitCode());
+            assertFalse(p.running());
+            assertEq(0, p.exitCode());
+        }
+
+        { # static group kill
+            ProcessGroup g();
+            Process p1(getTestValue("testSleep"), 10, {
+                "path": (m_prefix,),
+                "pgroup": g
+            });
+            Process p2(getTestValue("testSleep"), 10, {
+                "path": (m_prefix,),
+                "pgroup": g
+            });
+            Process p3(getTestValue("testSleep"), 10, {
+                "path": (m_prefix,),
+                "pgroup": g
+            });
+
+            int pgid1 = Process::getPgid(p1.id());
+            int pgid2 = Process::getPgid(p2.id());
+            int pgid3 = Process::getPgid(p3.id());
+            assertEq(pgid1, pgid2);
+            assertEq(pgid1, pgid3);
+
+            ProcessGroup::kill(pgid1, Qore::SIGTERM);
+            while (p1.running() || p2.running() || p3.running()) {
+                assertTrue(g.wait(1000));
+            }
+
+            assertFalse(p1.running());
+            assertFalse(p2.running());
+            assertFalse(p3.running());
+            assertFalse(Process::checkPid(p1.id()));
+            assertFalse(Process::checkPid(p2.id()));
+            assertFalse(Process::checkPid(p3.id()));
+        }
+
+        { # static group terminate
+            ProcessGroup g();
+            Process p1(getTestValue("testSleep"), 10, {
+                "path": (m_prefix,),
+                "pgroup": g
+            });
+            Process p2(getTestValue("testSleep"), 10, {
+                "path": (m_prefix,),
+                "pgroup": g
+            });
+            Process p3(getTestValue("testSleep"), 10, {
+                "path": (m_prefix,),
+                "pgroup": g
+            });
+
+            int pgid1 = Process::getPgid(p1.id());
+            int pgid2 = Process::getPgid(p2.id());
+            int pgid3 = Process::getPgid(p3.id());
+            assertEq(pgid1, pgid2);
+            assertEq(pgid1, pgid3);
+
+            ProcessGroup::terminate(pgid1);
+
+            int i = 0;
+            while (True) {
+                date t1 = now_us();
+                usleep(100*1000);
+                date t2 = now_us();
+                i++;
+
+                bool r1 = p1.running();
+                bool r2 = p2.running();
+                bool r3 = p3.running();
+                stderr.printf("slept %n - p1: %d, p2: %d, p3: %d\n", t2-t1, r1, r2, r3);
+                
+                if (! (r1 || r2 || r3)) {
+                    break;
+                }
+            }
+            stderr.printf("slept %d times before termination\n", i);
+
+            assertFalse(p1.running());
+            assertFalse(p2.running());
+            assertFalse(p3.running());
+            assertFalse(Process::checkPid(p1.id()));
+            assertFalse(Process::checkPid(p2.id()));
+            assertFalse(Process::checkPid(p3.id()));
+        }
+
+        { # group terminate
+            ProcessGroup g();
+            Process p1(getTestValue("testSleep"), 10, {
+                "path": (m_prefix,),
+                "pgroup": g
+            });
+            Process p2(getTestValue("testSleep"), 10, {
+                "path": (m_prefix,),
+                "pgroup": g
+            });
+            Process p3(getTestValue("testSleep"), 10, {
+                "path": (m_prefix,),
+                "pgroup": g
+            });
+
+            g.terminate();
+            
+            int i = 0;
+            while (True) {
+                date t1 = now_us();
+                usleep(100*1000);
+                date t2 = now_us();
+                i++;
+
+                bool r1 = p1.running();
+                bool r2 = p2.running();
+                bool r3 = p3.running();
+                stderr.printf("slept %n - p1: %d, p2: %d, p3: %d\n", t2-t1, r1, r2, r3);
+                
+                if (! (r1 || r2 || r3)) {
+                    break;
+                }
+            }
+            stderr.printf("slept %d times before termination\n", i);
+
+            assertFalse(p1.running());
+            assertFalse(p2.running());
+            assertFalse(p3.running());
+            assertFalse(Process::checkPid(p1.id()));
+            assertFalse(Process::checkPid(p2.id()));
+            assertFalse(Process::checkPid(p3.id()));
+        }
+    }
 }
 
 sub run_bg(Process p, Main m) {
@@ -706,7 +868,6 @@ sub run_bg(Process p, Main m) {
 sub executor_func(hash e) {
     if (VERBOSE) printf("executor_func: %n\n", e);
     MAIN.assertEq("on_success", e.name, "name check");
-    MAIN.assertEq(127, e.exit, "on_success exit code check");
     MAIN.assertEq(MAIN.prefix() + MAIN.getTestValue("testTrue"), e.exe, "on_success exe check");
     MAIN.assertEq(0, e.error_code, "on_success error_code check");
     MAIN.assertEq(MAIN.getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");

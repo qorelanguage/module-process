@@ -7,12 +7,16 @@ project(qore-process-module)
 option(USE_INTERNAL_BOOST "Enforce using internal copy of boost libraries" OFF)
 
 set (VERSION_MAJOR 0)
-set (VERSION_MINOR 1)
+set (VERSION_MINOR 2)
 set (VERSION_PATCH 0)
 
 # where to look first for cmake modules, before ${CMAKE_ROOT}/Modules/ is checked
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake )
 
+
+include(CheckCXXSymbolExists)
+include(CMakePushCheckState)
+include(CheckCXXCompilerFlag)
 
 find_package(Qore 0.9 REQUIRED)
 #find_package(Threads REQUIRED)
@@ -28,7 +32,6 @@ else (Boost_FOUND)
 endif (Boost_FOUND)
 
 
-include(CheckCXXCompilerFlag)
 CHECK_CXX_COMPILER_FLAG("-std=c++11" COMPILER_SUPPORTS_CXX11)
 if(COMPILER_SUPPORTS_CXX11)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
@@ -36,11 +39,22 @@ else()
     message(FATAL_ERROR "The compiler ${CMAKE_CXX_COMPILER} has no C++11 support. Please use a different C++ compiler.")
 endif()
 
-include(CheckCXXSymbolExists)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_definitions(-D_XOPEN_SOURCE=600)
+    add_definitions(-D_DEFAULT_SOURCE)
+endif()
+
 check_cxx_symbol_exists(kill signal.h HAVE_KILL)
 
+cmake_push_check_state(RESET)
+set(CMAKE_REQUIRED_DEFINITIONS -D_XOPEN_SOURCE=600 -D_DEFAULT_SOURCE)
+check_cxx_symbol_exists(killpg signal.h HAVE_KILLPG)
+check_cxx_symbol_exists(getpgid unistd.h HAVE_GETPGID)
+cmake_pop_check_state()
+
 set(CPP_SRC
-    src/processpriv.cpp
+    src/ProcessPriv.cpp
+    src/ProcessGroup.cpp
 )
 
 if (BOOST_INTERNAL)
@@ -62,8 +76,9 @@ else (BOOST_INTERNAL)
 endif (BOOST_INTERNAL)
 
 set(QPP_SRC
-    src/process.qpp
+    src/process-module.qpp
     src/QC_Process.qpp
+    src/QC_ProcessGroup.qpp
 )
 
 include_directories( ${CMAKE_SOURCE_DIR}/src )

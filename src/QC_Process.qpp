@@ -24,11 +24,15 @@
 
 /* -*- mode: c++; indent-tabs-mode: nil -*- */
 
+// std
+#include <cstdlib>
+
+// qore
 #include <qore/Qore.h>
 
-#include "processpriv.h"
-
-#include <cstdlib>
+// module
+#include "ProcessPriv.h"
+#include "unix-config.h"
 
 #if defined(__linux__) || (defined(__APPLE__) && defined(__MACH__))
 #define HAVE_PROCESS_GETMEMORYINFO 1
@@ -42,6 +46,12 @@
 #define HAVE_PROCESS_WAITFORTERMINATION 0
 #endif
 
+#if defined(HAVE_GETPGID)
+#define HAVE_PROCESS_GETPGID 1
+#else
+#define HAVE_PROCESS_GETPGID 0
+#endif
+
 DLLLOCAL extern const TypedHashDecl* hashdeclMemorySummaryInfo;
 
 /** @defgroup process_constants Process Constants
@@ -53,6 +63,9 @@ const HAVE_PROCESS_GETMEMORYINFO = bool(HAVE_PROCESS_GETMEMORYINFO);
 
 //! defines if the @ref Qore::Process::Process::checkPid() "Process::checkPid()" method is available on the current platform
 const HAVE_PROCESS_CHECKPID = bool(HAVE_PROCESS_CHECKPID);
+
+//! defines if the @ref Qore::Process::Process::getPgid() "Process::getPgid()" method is available on the current platform
+const HAVE_PROCESS_GETPGID = bool(HAVE_PROCESS_GETPGID);
 
 //! defines if the static @ref Qore::Process::Process::terminate() "Process::terminate()" method is available on the current platform
 const HAVE_PROCESS_TERMINATE = bool(HAVE_PROCESS_TERMINATE);
@@ -102,7 +115,7 @@ hashdecl Qore::Process::MemorySummaryInfo {
     executables. A shell will do this automatically, while this
     library provides a function for that.
 
-    The child process will be destroyed immediatelly when an instance of
+    The child process will be destroyed immediately when an instance of
     Process class is destroyed, except if @ref detach() is called.
 
     The simplest usage of Process is:
@@ -119,28 +132,29 @@ p.wait();
 
     The \c opts hash can hold following keys. All keys are optional.
 
-    - \c env : replace current process's ENV with a hash of env variables.
+    - \c env : Replace current process's ENV with a hash of env variables.
                Use @code ENV + ( "FOO" : "bar") @endcode is you want to merge parent's ENV to child.
-    - \c cwd : a string with initial "current working directory",
-               a dir which child should take as its initial work dir
-    - \c path : a list of strings. It's a custom search path to find \c command
+    - \c cwd : A string with initial "current working directory",
+               a dir which child should take as its initial working directory.
+    - \c path : A list of strings. It's a custom search path to find \c command
                 in the Process constructors. If it's not given, parent's ENV PATH is used.
                 This value is not passed to child's ENV at all.
-    - \c stdout : an opened Qore \c File object. Standard output of the process will be redirected to this file.
-    - \c stderr : an opened Qore \c File object. Standard error output of the process will be redirected to this file.
-    - \c on_success : a code/call closure with prototype <tt>sub (hash e)</tt>.
+    - \c pgroup : A process group under which the process should be started.
+    - \c stdout : An opened Qore \c File object. Standard output of the process will be redirected to this file.
+    - \c stderr : An opened Qore \c File object. Standard error output of the process will be redirected to this file.
+    - \c on_success : A code/call closure with prototype <tt>sub (hash e)</tt>.
                       This handler is invoked if launching the process has succeeded.
-    - \c on_setup : a code/call closure with prototype <tt>sub (hash e)</tt>.
+    - \c on_setup : A code/call closure with prototype <tt>sub (hash e)</tt>.
                     This handler is invoked before the process in launched, to setup parameters
-    - \c on_error : a code/call closure with prototype <tt>sub (hash e)</tt>.
+    - \c on_error : A code/call closure with prototype <tt>sub (hash e)</tt>.
                     This handler is invoked if an error during launch occured.
-    - \c on_fork_error : a code/call closure with prototype <tt>sub (hash e)</tt>.
+    - \c on_fork_error : A code/call closure with prototype <tt>sub (hash e)</tt>.
                          This handler is invoked if the fork failed.
                          Posix only.
-    - \c on_exec_setup : a code/call closure with prototype <tt>sub (hash e)</tt>.
+    - \c on_exec_setup : A code/call closure with prototype <tt>sub (hash e)</tt>.
                          This handler is invoked if the fork succeeded.
                          Posix only.
-    - \c on_exec_error : a code/call closure with prototype <tt>sub (hash e)</tt>.
+    - \c on_exec_error : A code/call closure with prototype <tt>sub (hash e)</tt>.
                          This handler is invoked if the exec call errored.
                          Posix only.
 
@@ -248,9 +262,10 @@ Process::copy() {
 //! Get the child process's exit code.
 /** The return value is without any meaning if the child wasn't waited for or if it was terminated.
 
-    @return child process's exit code
+    @return child process's exit code, or -1 in case the process is still running
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+    @throw PROCESS-EXITCODE-ERROR an error happened while getting the process's exit code'
  */
 int Process::exitCode() {
     return priv->exitCode(xsink);
@@ -261,6 +276,7 @@ int Process::exitCode() {
     @return child process's PID
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+    @throw PROCESS-ID-ERROR an error happened while getting the process ID
  */
 int Process::id() {
     return priv->id(xsink);
@@ -272,6 +288,7 @@ int Process::id() {
     @return \c True in case of valid child handle
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+    @throw PROCESS-VALID-ERROR an error happened while checking if the handle was valid
  */
 bool Process::valid() {
     return priv->valid(xsink);
@@ -282,6 +299,7 @@ bool Process::valid() {
     @return \c True if the child is running
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+    @throw PROCESS-RUNNING-ERROR an error happened while checking if process is running
 
     @see @ref Process::checkPid()
 */
@@ -292,6 +310,7 @@ bool Process::running() {
 //! Wait for the child process to exit.
 /**
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+    @throw PROCESS-WAIT-ERROR an error happened while waiting for the process to exit
 
     @return always returns \c True to keep compatibility with wait(timeout) version
 
@@ -311,6 +330,7 @@ bool Process::wait() {
     @param t a timeout to wait
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+    @throw PROCESS-WAIT-ERROR an error happened while waiting for the process to exit
 
     @return \c True if child exited while waiting, \c False in case of timeout
 
@@ -341,6 +361,7 @@ nothing Process::detach() {
     and TerminateProcess on windows.
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+    @throw PROCESS-TERMINATE-ERROR an error happened while terminating the process
  */
 nothing Process::terminate() {
     priv->terminate(xsink);
@@ -554,6 +575,21 @@ static hash<MemorySummaryInfo> Process::getMemorySummaryInfo(int pid) {
 */
 static bool Process::checkPid(int pid) {
     return ProcessPriv::checkPid(pid, xsink);
+}
+
+//! Get pgid of a process given it's pid.
+/**
+    @param pid id of the process
+
+    @throw INVALID-PID-ERROR invalid pid (the process could not be found)
+    @throw PROCESS-GETPGID-ERROR unknown error happened
+    @throw PROCESS-GETPGID-UNSUPPORTED-ERROR there is no implementation for this method on the current platform
+
+    @see
+    - @ref HAVE_PROCESS_GETPGID
+*/
+static int Process::getPgid(int pid) {
+    return ProcessPriv::getPgid(pid, xsink);
 }
 
 //! terminate a process unconditionally given its PID

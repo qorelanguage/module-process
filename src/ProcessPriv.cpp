@@ -22,24 +22,25 @@
     DEALINGS IN THE SOFTWARE.
 */
 
-#include "processpriv.h"
+#include "ProcessPriv.h"
 
 // std
-#include <exception>
 #include <cctype>
+#include <exception>
 
 // boost
 #include <boost/numeric/conversion/cast.hpp>
 
 // module
-#include "qoreprocesshandler.h"
+#include "ProcessGroup.h"
+#include "QoreProcessHandler.h"
 #include "unix-config.h"
 
 namespace bp = boost::process;
 namespace ex = boost::process::extend;
 
 DLLLOCAL extern const TypedHashDecl* hashdeclMemorySummaryInfo;
-
+DLLLOCAL extern QoreClass* QC_PROCESSGROUP;
 
 ProcessPriv::ProcessPriv(pid_t pid, ExceptionSink* xsink) :
     m_xsink(xsink),
@@ -60,7 +61,7 @@ ProcessPriv::ProcessPriv(pid_t pid, ExceptionSink* xsink) :
     }
 }
 
-ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, const QoreHashNode *opts, ExceptionSink* xsink) :
+ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, const QoreHashNode* opts, ExceptionSink* xsink) :
     m_xsink(xsink),
     m_asio_ctx(),
     m_in_pipe(m_asio_ctx),
@@ -90,7 +91,12 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
     bp::environment env = optsEnv(opts, xsink);
     boost::filesystem::path p = optsPath(command, opts, xsink);
     std::string cwd = optsCwd(opts, xsink);
+    if (xsink->isException()) {
+        return;
+    }
 
+    // check process group option
+    ReferenceHolder<ProcessGroup> group(optsProcessGroup(opts, xsink), xsink);
     if (xsink->isException()) {
         return;
     }
@@ -127,7 +133,10 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
                                    on_exec_setup,
                                    on_exec_error);
 
-        launchChild(p, exeArgs, env, cwd.c_str(), handler, stdoutFile, stderrFile);
+        launchChild(p, exeArgs, env, cwd.c_str(), handler, stdoutFile, stderrFile, *group);
+        if (group) {
+            group->setUsedForProcess(); // call the group used method
+        }
     }
     catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-CONSTRUCTOR-ERROR", ex.what());
@@ -277,6 +286,50 @@ int ProcessPriv::optsStdout(const char* keyName, const QoreHashNode* opts, Excep
     return ret;
 }
 
+ProcessGroup* ProcessPriv::optsProcessGroup(const QoreHashNode* opts, ExceptionSink* xsink) {
+    if (opts && opts->existsKey("pgroup")) {
+        QoreValue n = opts->getKeyValue("pgroup");
+        if (n.getType() != NT_OBJECT) {
+            xsink->raiseException("PROCESS-OPTIONS-ERROR",
+                                  "Process constructor option '%s' must be a ProcessGroup object; got: " \
+                                  "type '%s'(%d) instead",
+                                  "pgroup",
+                                  n.getTypeName(),
+                                  n.getType()
+            );
+            return nullptr;
+        }
+
+        // if the above returns NT_OBJECT, then the following line must succeed
+        QoreObject* obj = n.get<QoreObject>();
+
+        // see if the ProcessGroup class is accessible in this call
+        {
+            ClassAccess access;
+            bool in_hierarchy = obj->getClass()->inHierarchy(*QC_PROCESSGROUP, access);
+            if (!in_hierarchy || access == Internal) {
+                xsink->raiseException("PROCESS-OPTIONS-ERROR", "Process constructor option '%s' expecting an object " \
+                    "of class 'ProcessGroup'; got an object of class '%s' instead",
+                    "pgroup",
+                    obj->getClassName());
+                return nullptr;
+            }
+        }
+
+        PrivateDataRefHolder<ProcessGroup> group(obj, CID_PROCESSGROUP, xsink);
+        if (*xsink) {
+            // an exception has already been thrown here
+            xsink->appendLastDescription(
+                " (while processing Process constructor option '%s' expecting a valid ProcessGroup object)",
+                "pgroup"
+            );
+            return nullptr;
+        }
+        return group.release();
+    }
+    return nullptr;
+}
+
 boost::filesystem::path ProcessPriv::optsPath(const char* command, const QoreHashNode* opts, ExceptionSink* xsink) {
     boost::filesystem::path ret;
 
@@ -407,57 +460,126 @@ void ProcessPriv::prepareClosures() {
     };
 }
 
-void ProcessPriv::launchChild(boost::filesystem::path p,
-                             std::vector<std::string>& args,
-                             bp::environment env,
-                             const char* cwd,
-                             QoreProcessHandler& handler,
-                             FILE* stdoutFile,
-                             FILE* stderrFile)
-{
-    if (stdoutFile && stderrFile) {
-        m_process = new bp::child(bp::exe = p.string(),
-                                  bp::args = args,
-                                  bp::env = env,
-                                  bp::start_dir = cwd,
-                                  handler,
-                                  bp::std_out > stdoutFile,
-                                  bp::std_err > stderrFile,
-                                  bp::std_in < m_in_pipe,
-                                  m_asio_ctx);
-    }
-    else if (stdoutFile) {
-        m_process = new bp::child(bp::exe = p.string(),
-                                  bp::args = args,
-                                  bp::env = env,
-                                  bp::start_dir = cwd,
-                                  handler,
-                                  bp::std_out > stdoutFile,
-                                  bp::std_err > m_err_pipe,
-                                  bp::std_in < m_in_pipe,
-                                  m_asio_ctx);
-    }
-    else if (stderrFile) {
-        m_process = new bp::child(bp::exe = p.string(),
-                                  bp::args = args,
-                                  bp::env = env,
-                                  bp::start_dir = cwd,
-                                  handler,
-                                  bp::std_out > m_out_pipe,
-                                  bp::std_err > stderrFile,
-                                  bp::std_in < m_in_pipe,
-                                  m_asio_ctx);
-    }
-    else {
-        m_process = new bp::child(bp::exe = p.string(),
-                                  bp::args = args,
-                                  bp::env = env,
-                                  bp::start_dir = cwd,
-                                  handler,
-                                  bp::std_out > m_out_pipe,
-                                  bp::std_err > m_err_pipe,
-                                  bp::std_in < m_in_pipe,
-                                  m_asio_ctx);
+void ProcessPriv::launchChild(
+    boost::filesystem::path p,
+    std::vector<std::string>& args,
+    bp::environment env,
+    const char* cwd,
+    QoreProcessHandler& handler,
+    FILE* stdoutFile,
+    FILE* stderrFile,
+    ProcessGroup* group
+) {
+    if (!group) {
+        if (stdoutFile && stderrFile) {
+            m_process = new bp::child(
+                bp::exe = p.string(),
+                bp::args = args,
+                bp::env = env,
+                bp::start_dir = cwd,
+                handler,
+                bp::std_out > stdoutFile,
+                bp::std_err > stderrFile,
+                bp::std_in < m_in_pipe,
+                m_asio_ctx
+            );
+        }
+        else if (stdoutFile) {
+            m_process = new bp::child(
+                bp::exe = p.string(),
+                bp::args = args,
+                bp::env = env,
+                bp::start_dir = cwd,
+                handler,
+                bp::std_out > stdoutFile,
+                bp::std_err > m_err_pipe,
+                bp::std_in < m_in_pipe,
+                m_asio_ctx
+            );
+        }
+        else if (stderrFile) {
+            m_process = new bp::child(
+                bp::exe = p.string(),
+                bp::args = args,
+                bp::env = env,
+                bp::start_dir = cwd,
+                handler,
+                bp::std_out > m_out_pipe,
+                bp::std_err > stderrFile,
+                bp::std_in < m_in_pipe,
+                m_asio_ctx
+            );
+        }
+        else {
+            m_process = new bp::child(
+                bp::exe = p.string(),
+                bp::args = args,
+                bp::env = env,
+                bp::start_dir = cwd,
+                handler,
+                bp::std_out > m_out_pipe,
+                bp::std_err > m_err_pipe,
+                bp::std_in < m_in_pipe,
+                m_asio_ctx
+            );
+        }
+    } else {
+        if (stdoutFile && stderrFile) {
+            m_process = new bp::child(
+                bp::exe = p.string(),
+                bp::args = args,
+                bp::env = env,
+                bp::start_dir = cwd,
+                handler,
+                group->getGroup(),
+                bp::std_out > stdoutFile,
+                bp::std_err > stderrFile,
+                bp::std_in < m_in_pipe,
+                m_asio_ctx
+            );
+        }
+        else if (stdoutFile) {
+            m_process = new bp::child(
+                bp::exe = p.string(),
+                bp::args = args,
+                bp::env = env,
+                bp::start_dir = cwd,
+                handler,
+                group->getGroup(),
+                bp::std_out > stdoutFile,
+                bp::std_err > m_err_pipe,
+                bp::std_in < m_in_pipe,
+                m_asio_ctx
+            );
+        }
+        else if (stderrFile) {
+            m_process = new bp::child(
+                bp::exe = p.string(),
+                bp::args = args,
+                bp::env = env,
+                bp::start_dir = cwd,
+                handler,
+                group->getGroup(),
+                bp::std_out > m_out_pipe,
+                bp::std_err > stderrFile,
+                bp::std_in < m_in_pipe,
+                m_asio_ctx
+            );
+        }
+        else {
+            m_process = new bp::child(
+                bp::exe = p.string(),
+                bp::args = args,
+                bp::env = env,
+                bp::start_dir = cwd,
+                handler,
+                group->getGroup(),
+                bp::std_out > m_out_pipe,
+                bp::std_err > m_err_pipe,
+                bp::std_in < m_in_pipe,
+                m_asio_ctx
+            );
+        }
     }
 
     // create async read operations
@@ -477,6 +599,9 @@ int ProcessPriv::exitCode(ExceptionSink* xsink) {
         return -1;
 
     try {
+        if (m_process->running()) {
+            return -1;
+        }
         return m_process->exit_code();
     } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-EXITCODE-ERROR", ex.what());
@@ -927,6 +1052,25 @@ bool ProcessPriv::checkPid(int pid, ExceptionSink* xsink) {
 #else
     xsink->raiseException("PROCESS-CHECKPID-UNSUPPORTED-ERROR", "this call is not supported on this platform");
     return false;
+#endif
+}
+
+pid_t ProcessPriv::getPgid(pid_t pid, ExceptionSink* xsink) {
+#ifdef HAVE_GETPGID
+    pid_t ret = ::getpgid(pid);
+    if (ret == -1) {
+        if (errno == ESRCH) {
+            xsink->raiseException("INVALID-PID-ERROR", "no process with pid %d can be found", pid);
+        }
+        else {
+            xsink->raiseException("PROCESS-GETPGID-ERROR", "unknown error happened with errno %d", errno);
+        }
+        return -1;
+    }
+    return ret;
+#else
+    xsink->raiseException("PROCESS-GETPGID-UNSUPPORTED-ERROR", "this call is not supported on this platform");
+    return -1;
 #endif
 }
 

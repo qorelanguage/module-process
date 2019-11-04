@@ -22,8 +22,8 @@
     DEALINGS IN THE SOFTWARE.
 */
 
-#ifndef PROCESSPRIV_H
-#define PROCESSPRIV_H
+#ifndef PROCESSPRIV_H_MRVHGZTJMRTDQNBTJJDDS43E
+#define PROCESSPRIV_H_MRVHGZTJMRTDQNBTJJDDS43E
 
 // std
 #include <chrono>
@@ -45,12 +45,15 @@
 // qore
 #include <qore/Qore.h>
 
-#include "qoreprocesshandler.h"
+// module
+#include "QoreProcessHandler.h"
 
 DLLLOCAL extern qore_classid_t CID_PROCESS;
 DLLLOCAL extern QoreClass* QC_PROCESS;
 
 namespace bp = boost::process;
+
+class ProcessGroup;
 
 class ProcessPriv : public AbstractPrivateData {
 protected:
@@ -98,6 +101,8 @@ public:
 
     DLLLOCAL static bool checkPid(int pid, ExceptionSink* xsink);
 
+    DLLLOCAL static pid_t getPgid(pid_t pid, ExceptionSink* xsink);
+
     DLLLOCAL static void terminate(int pid, ExceptionSink* xsink);
 
     DLLLOCAL static void waitForTermination(int pid, ExceptionSink* xsink);
@@ -110,6 +115,8 @@ private:
 
     DLLLOCAL int optsStdout(const char* keyName, const QoreHashNode* opts, ExceptionSink* xsink);
 
+    DLLLOCAL ProcessGroup* optsProcessGroup(const QoreHashNode* opts, ExceptionSink* xsink);
+
     DLLLOCAL bool processCheck(ExceptionSink* xsink);
 
     //! Process exe arguments passed through constructor.
@@ -120,13 +127,16 @@ private:
 
     DLLLOCAL void prepareClosures();
     
-    DLLLOCAL void launchChild(boost::filesystem::path p,
-                              std::vector<std::string>& args,
-                              bp::environment env,
-                              const char* cwd,
-                              QoreProcessHandler& handler,
-                              FILE* stdoutFile,
-                              FILE* stderrFile);
+    DLLLOCAL void launchChild(
+        boost::filesystem::path p,
+        std::vector<std::string>& args,
+        bp::environment env,
+        const char* cwd,
+        QoreProcessHandler& handler,
+        FILE* stdoutFile,
+        FILE* stderrFile,
+        ProcessGroup* group
+    );
 
 #ifdef __linux__
     DLLLOCAL static QoreHashNode* getMemorySummaryInfoLinux(int pid, ExceptionSink* xsink);
@@ -364,4 +374,4 @@ private:
     std::function<void(const boost::system::error_code& ec, size_t n)> m_on_stderr_complete;
 };
 
-#endif
+#endif // PROCESSPRIV_H_MRVHGZTJMRTDQNBTJJDDS43E
