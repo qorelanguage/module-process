@@ -10,7 +10,7 @@ ENV_FILE=/tmp/env.sh
 # setup MODULE_SRC_DIR env var
 cwd=`pwd`
 if [ "${MODULE_SRC_DIR}" = "" ]; then
-    if [ -e "$cwd/src/processpriv.cpp" ] || [ -e "$cwd/src/process.qpp" ]; then
+    if [ -e "${cwd}/src/ProcessPriv.cpp" ] || [ -e "${cwd}/src/process-module.qpp" ]; then
         MODULE_SRC_DIR=$cwd
     else
         MODULE_SRC_DIR=$WORKDIR/module-process
