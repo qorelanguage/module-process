@@ -1,7 +1,7 @@
 /*
     Qore Programming Language process Module
 
-    Copyright (C) 2003 - 2019 Qore Technologies, s.r.o.
+    Copyright (C) 2003 - 2020 Qore Technologies, s.r.o.
 
     Permission is hereby granted, free of charge, to any person obtaining a
     copy of this software and associated documentation files (the "Software"),
@@ -24,6 +24,8 @@
 
 #include "processpriv.h"
 
+#include <unistd.h>
+
 // std
 #include <exception>
 #include <cctype>
@@ -40,6 +42,7 @@ namespace ex = boost::process::extend;
 
 DLLLOCAL extern const TypedHashDecl* hashdeclMemorySummaryInfo;
 
+static int page_size = sysconf(_SC_PAGESIZE);
 
 ProcessPriv::ProcessPriv(pid_t pid, ExceptionSink* xsink) :
     m_xsink(xsink),
@@ -710,9 +713,9 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoLinux(int pid, ExceptionSink* xsi
         // find space after rss
         qore_offset_t pos1 = l.find(' ', pos + 1);
         l.terminate(pos1);
-        rss = strtoll(l.c_str() + pos + 1, nullptr, 10) * PAGE_SIZE;
+        rss = strtoll(l.c_str() + pos + 1, nullptr, 10) * page_size;
         l.terminate(pos);
-        vsz = l.toBigInt() * PAGE_SIZE;
+        vsz = l.toBigInt() * page_size;
     }
 
     ReferenceHolder<QoreHashNode> rv(new QoreHashNode(hashdeclMemorySummaryInfo, xsink), xsink);
