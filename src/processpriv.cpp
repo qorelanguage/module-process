@@ -29,6 +29,7 @@
 // std
 #include <exception>
 #include <cctype>
+#include <stdexcept>
 
 // boost
 #include <boost/numeric/conversion/cast.hpp>
@@ -283,29 +284,34 @@ int ProcessPriv::optsStdout(const char* keyName, const QoreHashNode* opts, Excep
 boost::filesystem::path ProcessPriv::optsPath(const char* command, const QoreHashNode* opts, ExceptionSink* xsink) {
     boost::filesystem::path ret;
 
-    if (opts && opts->existsKey("path")) {
-        QoreValue n = opts->getKeyValue("path");
-        if (n.getType() != NT_LIST) {
-            xsink->raiseException("PROCESS-OPTIONS-ERROR",
-                                  "Path option must be a list of strings, got: '%s'(%d)",
-                                  n.getTypeName(),
-                                  n.getType()
-            );
-            return ret;
+    try {
+        if (opts && opts->existsKey("path")) {
+            QoreValue n = opts->getKeyValue("path");
+            if (n.getType() != NT_LIST) {
+                xsink->raiseException("PROCESS-OPTIONS-ERROR",
+                                      "Path option must be a list of strings, got: '%s'(%d)",
+                                      n.getTypeName(),
+                                      n.getType()
+                );
+                return ret;
+            }
+
+            const QoreListNode* l = n.get<const QoreListNode>();
+            std::vector<boost::filesystem::path> paths;
+
+            for (qore_size_t i = 0; i < l->size(); i++) {
+                QoreStringValueHelper s(l->retrieveEntry(i));
+                paths.push_back(boost::filesystem::path(s->c_str()));
+            }
+
+            ret = bp::search_path(command, paths);
         }
-
-        const QoreListNode* l = n.get<const QoreListNode>();
-        std::vector<boost::filesystem::path> paths;
-
-        for (qore_size_t i = 0; i < l->size(); i++) {
-            QoreStringValueHelper s(l->retrieveEntry(i));
-            paths.push_back(boost::filesystem::path(s->c_str()));
+        else {
+            ret = bp::search_path(command);
         }
-
-        ret = bp::search_path(command, paths);
-    }
-    else {
-        ret = bp::search_path(command);
+    } catch (std::runtime_error& ex) {
+        xsink->raiseException("PROCESS-SEARCH-PATH-ERROR", ex.what());
+	return ret;
     }
 
     if (ret.empty()) {
