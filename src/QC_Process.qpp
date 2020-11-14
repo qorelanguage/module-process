@@ -1,7 +1,7 @@
 /*
     Qore Programming Language process Module
 
-    Copyright (C) 2003 - 2019 Qore Technologies, s.r.o.
+    Copyright (C) 2003 - 2020 Qore Technologies, s.r.o.
 
     Permission is hereby granted, free of charge, to any person obtaining a
     copy of this software and associated documentation files (the "Software"),
@@ -119,30 +119,34 @@ p.wait();
 
     The \c opts hash can hold following keys. All keys are optional.
 
-    - \c env : replace current process's ENV with a hash of env variables.
-               Use @code ENV + ( "FOO" : "bar") @endcode is you want to merge parent's ENV to child.
-    - \c cwd : a string with initial "current working directory",
-               a dir which child should take as its initial work dir
-    - \c path : a list of strings. It's a custom search path to find \c command
-                in the Process constructors. If it's not given, parent's ENV PATH is used.
-                This value is not passed to child's ENV at all.
-    - \c stdout : an opened Qore \c File object. Standard output of the process will be redirected to this file.
-    - \c stderr : an opened Qore \c File object. Standard error output of the process will be redirected to this file.
-    - \c on_success : a code/call closure with prototype <tt>sub (hash e)</tt>.
-                      This handler is invoked if launching the process has succeeded.
-    - \c on_setup : a code/call closure with prototype <tt>sub (hash e)</tt>.
-                    This handler is invoked before the process in launched, to setup parameters
-    - \c on_error : a code/call closure with prototype <tt>sub (hash e)</tt>.
-                    This handler is invoked if an error during launch occured.
-    - \c on_fork_error : a code/call closure with prototype <tt>sub (hash e)</tt>.
-                         This handler is invoked if the fork failed.
-                         Posix only.
-    - \c on_exec_setup : a code/call closure with prototype <tt>sub (hash e)</tt>.
-                         This handler is invoked if the fork succeeded.
-                         Posix only.
-    - \c on_exec_error : a code/call closure with prototype <tt>sub (hash e)</tt>.
-                         This handler is invoked if the exec call errored.
-                         Posix only.
+    - \c env: replace current process's ENV with a hash of env variables.
+              Use @code ENV + ( "FOO" : "bar") @endcode is you want to merge parent's ENV to child.
+    - \c cwd: a string with initial "current working directory",
+              a dir which child should take as its initial work dir
+    - \c path: a list of strings. It's a custom search path to find \c command
+               in the Process constructors. If it's not given, parent's ENV PATH is used.
+               This value is not passed to child's ENV at all.
+    - \c stdout: an opened %Qore \c File or \c OutputStream object; standard output of the process will be redirected
+      to this objec.  In case an \c OutputStream object is used here, the @ref readStdout() and @ref readStdoutBinary()
+      methods cannot be called, or a \c PROCESS-STREAM-ERROR exception will be thrown.
+    - \c stderr: an opened %Qore \c File or \c OutputStream object; standard error output of the process will be
+      redirected to this object.  In case an \c OutputStream object is used here, the @ref readStdout() and
+      @ref readStdoutBinary() methods cannot be called, or a \c PROCESS-STREAM-ERROR exception will be thrown.
+    - \c on_success: a code/call closure with prototype <tt>sub (hash e)</tt>.
+                     This handler is invoked if launching the process has succeeded.
+    - \c on_setup: a code/call closure with prototype <tt>sub (hash e)</tt>.
+                   This handler is invoked before the process in launched, to setup parameters
+    - \c on_error: a code/call closure with prototype <tt>sub (hash e)</tt>.
+                   This handler is invoked if an error during launch occured.
+    - \c on_fork_error: a code/call closure with prototype <tt>sub (hash e)</tt>.
+                        This handler is invoked if the fork failed.
+                        Posix only.
+    - \c on_exec_setup: a code/call closure with prototype <tt>sub (hash e)</tt>.
+                        This handler is invoked if the fork succeeded.
+                        Posix only.
+    - \c on_exec_error: a code/call closure with prototype <tt>sub (hash e)</tt>.
+                        This handler is invoked if the exec call errored.
+                        Posix only.
 
     Option example:
 
@@ -150,18 +154,18 @@ p.wait();
 %new-style
 %requires process
 
-sub executor_func(hash e) {
-    printf("on_setup: %n\n", e);
+sub executor_func(hash<auto> e) {
+    printf("on_setup: %y\n", e);
 }
 
-hash opts = (
-    "env" : ( "FOO" : "bar"),
-    "cwd" : "/tmp",
-    "on_success" : sub (hash e) { # a closure is used
-        printf("on_success: %n\n", e);
+hash<auto> opts = {
+    "env": {"FOO": "bar"},
+    "cwd": "/tmp",
+    "on_success": sub (hash<auto> e) { # a closure is used
+        printf("on_success: %y\n", e);
     },
-    "on_setup" : \executor_func(), # a call ref
-);
+    "on_setup": \executor_func(), # a call ref
+};
 
 Process p("true", opts);
 p.wait();
@@ -171,9 +175,23 @@ int ret = p.exitCode();
 output of the script will be:
 
     @code
-on_setup: hash: (name : "on_setup", exe : "/usr/bin/true", pid : -1, exit : 127, error_code : 0, error_message : "Success", error_category : "system")
-on_success: hash: (name : "on_success", exe : "/usr/bin/true", pid : 23014, exit : 127, error_code : 0, error_message : "Success", error_category : "system")    @endcode
+on_setup: {name: "on_setup", exe: "/opt/local/libexec/gnubin/true", pid: -1, exit: 127, error_code: 0, error_message: "Undefined error: 0", error_category: "system"}
+on_success: {name: "on_success", exe: "/opt/local/libexec/gnubin/true", pid: 49313, exit: 127, error_code: 0, error_message: "Undefined error: 0", error_category: "system"}
+    @endcode
 
+    @note
+    - If streams are used to capture process output, the streams will be unassociated with the calling thread and
+      reassociated with the I/O thread used to capture process output.  Any exceptions thrown in stream operations in
+      the I/O thread will be rethrown in the calling thread when the process exits, either in the wait() call or in
+      the destructor().  When a thread waits on the process to terminate, any stream objects will be reassigned to the
+      calling thread.
+    - This class will attempt to provide complete character output in the output read methods; if the string encoding
+      used is a multibyte encoding (like the default, \c UTF-8), then any partial characters read at the end of string
+      will be saved in a temporary buffer and prepended to the next read call.  If invalid character data is read from
+      stdout or stderr, this can result in output being buffered and not returned.  In such cases use a
+      single-character encoding (like \c ASCII) or use the binary read methods instead.  If a stream is used instead,
+      even if the object is a string stream, binary writes are made to the stream and this class makes no effort to
+      return valid multi-byte character data.
  */
 qclass Process [dom=EXTERNAL_PROCESS; arg=ProcessPriv* priv; ns=Qore::Process];
 
@@ -204,7 +222,7 @@ Process::constructor(string command) {
     @param opts a hash with additional options for the child process @ref process_options
 
     @throw PROCESS-CONSTRUCTOR-ERROR in case of error. Exception \c desc contains the additional information
-    @throw PROCESS-OPTIONS-ERROR in case invalid option is passed
+    @throw PROCESS-OPTION-ERROR in case invalid option is passed
     @throw PROCESS-SEARCH-PATH-ERROR in case the \c command is not found in given PATH
  */
 Process::constructor(string command, hash opts) {
@@ -230,7 +248,7 @@ Process::constructor(string command, softlist arguments) {
     @param opts a hash with additional options for the child process. See @ref process_options
 
     @throw PROCESS-CONSTRUCTOR-ERROR in case of error. Exception \c desc contains the additional information
-    @throw PROCESS-OPTIONS-ERROR in case invalid option is passed
+    @throw PROCESS-OPTION-ERROR in case invalid option is passed
     @throw PROCESS-SEARCH-PATH-ERROR in case the \c command is not found in given PATH
  */
 Process::constructor(string command, softlist arguments, hash opts) {
@@ -243,6 +261,15 @@ Process::constructor(string command, softlist arguments, hash opts) {
  */
 Process::copy() {
    xsink->raiseException("PROCESS-COPY-ERROR", "copying Proces objects is currently not supported");
+}
+
+//! Destroys the object; rethrows any pending exceptions thrown in background threads
+/**
+    @throw any Any pending exception thrown in background I/O threads will be rethrown in the destructor
+ */
+Process::destructor() {
+    priv->destructor(xsink);
+    priv->deref();
 }
 
 //! Get the child process's exit code.
@@ -291,16 +318,18 @@ bool Process::running() {
 
 //! Wait for the child process to exit.
 /**
-    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
-
-    @return always returns \c True to keep compatibility with wait(timeout) version
-
-    Example:
+    @par Example:
     @code
 Process p("sleep", 3);
 p.wait(); # a blocking/wait call
 printf("Sleep finished with code: %d\n", p.exitCode());
     @endcode
+
+    @return always returns \c True to keep compatibility with wait(timeout) version
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+
+    @note Any exceptions thrown in the background I/O thread (if a stream was used) are rethrown here
  */
 bool Process::wait() {
     return priv->wait(xsink);
@@ -308,13 +337,7 @@ bool Process::wait() {
 
 //! Wait for the child process to exit.
 /**
-    @param t a timeout to wait
-
-    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
-
-    @return \c True if child exited while waiting, \c False in case of timeout
-
-    Example:
+    @par Example:
     @code
 Process p("sleep", 3);
 while (!p.wait(1)) {
@@ -322,9 +345,18 @@ while (!p.wait(1)) {
 }
 printf("Sleep finished with code: %d\n", p.exitCode());
     @endcode
+
+    @param timeout_ms a timeout to wait
+
+    @return \c True if child exited while waiting, \c False in case of timeout
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+
+    @note Any exceptions thrown in the background I/O thread (if a stream was used) are rethrown here
+    if the process terminates in the timeout period
  */
-bool Process::wait(timeout t) {
-    return priv->wait(t, xsink);
+bool Process::wait(timeout timeout_ms) {
+    return priv->wait(timeout_ms, xsink);
 }
 
 //! Detach the child, i.e. let it run after this handle dies.
@@ -413,8 +445,20 @@ nothing Process::write(number n) {
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
     @throw PROCESS-READ-ERROR in case of read error
+    @throw PROCESS-STREAM-ERROR in case the \a stdout option was used with an \c OutputStream argument in the
+    constructor()
 
-    @returns string with data or NOTHING if no data is available
+    @returns string with data or NOTHING if no data is available; the length of the returned value can exceed the
+    byte length requested in case of buffered partial multi-byte characters
+
+    @note
+    - This method will throw a \c PROCESS-STREAM-ERROR if an \c OutputStream argument was used in the \a stdout
+      option in the constructor()
+    - This class will attempt to provide complete character output in the output read methods; if the string encoding
+      used is a multibyte encoding (like the default, \c UTF-8), then any partial characters read at the end of string
+      will be saved in a temporary buffer and prepended to the next read call.  If invalid character data is read from
+      stdout or stderr, this can result in output being buffered and not returned.  In such cases use a
+      single-character encoding (like \c ASCII) or use the binary read methods instead.
  */
 *string Process::readStdout(int bytes, timeout timeout = 0) {
     if (bytes < 0)
@@ -444,8 +488,20 @@ nothing Process::write(number n) {
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
     @throw PROCESS-READ-ERROR in case of read error
+    @throw PROCESS-STREAM-ERROR in case the \a stderr option was used with an \c OutputStream argument in the
+    constructor()
 
-    @returns string with data or NOTHING if no data is available
+    @returns string with data or NOTHING if no data is available; the length of the returned value can exceed the
+    byte length requested in case of buffered partial multi-byte characters
+
+    @note
+    - This method will throw a \c PROCESS-STREAM-ERROR if an \c OutputStream argument was used in the \a stderr
+      option in the constructor()
+    - This class will attempt to provide complete character output in the output read methods; if the string encoding
+      used is a multibyte encoding (like the default, \c UTF-8), then any partial characters read at the end of string
+      will be saved in a temporary buffer and prepended to the next read call.  If invalid character data is read from
+      stdout or stderr, this can result in output being buffered and not returned.  In such cases use a
+      single-character encoding (like \c ASCII) or use the binary read methods instead.
  */
 *string Process::readStderr(int bytes, timeout timeout = 0) {
     if (bytes < 0)
@@ -456,17 +512,94 @@ nothing Process::write(number n) {
     return priv->readStderr(static_cast<size_t>(bytes), xsink);
 }
 
+//! Read from child process's standard output and return a binary value.
+/** Reads data from child process's standard output. If no timeout is given, or
+    timeout is 0 or negative, the method reads all data that is currently available
+    up to the count passed in \c bytes parameter and then returns immediately.
+    If no data is available, it will return NOTHING.
+
+    If positive timeout value is passed, then the method reads all data that is
+    currently available up to the count passed in \c bytes parameter and then
+    returns immediately. If no data is available, it will sleep until timeout
+    and then try to read. If there is still no data, it will return.
+
+    This method does not guarantee that any data will be read or that \c bytes count of bytes will be read.
+
+    @param bytes a maximum count of bytes to read
+    @param timeout timeout in milliseconds; if 0 or negative, the method will return immediately if there is no data
+    available
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+    @throw PROCESS-READ-ERROR in case of read error
+    @throw PROCESS-STREAM-ERROR in case the \a stdout option was used with an \c OutputStream argument in the
+    constructor()
+
+    @returns a binary value with the raw data read data or NOTHING if no data is available
+
+    @note This method will throw a \c PROCESS-STREAM-ERROR if an \c OutputStream argument was used in the \a stdout
+    option in the constructor()
+ */
+*binary Process::readStdoutBinary(int bytes, timeout timeout = 0) {
+    if (bytes < 0)
+        return QoreValue();
+
+    if (timeout > 0)
+        return priv->readStdoutBinaryTimeout(static_cast<size_t>(bytes), timeout, xsink);
+    return priv->readStdoutBinary(static_cast<size_t>(bytes), xsink);
+}
+
+//! Read from child process's standard error output and return a binary value.
+/** Reads data from child process's standard error output. If no timeout is given,
+    or timeout is 0 or negative, the method reads all data that is currently
+    available up to the count passed in \c bytes parameter and then returns immediately.
+    If no data is available, it will return NOTHING.
+
+    If positive timeout value is passed, then the method reads all data that is
+    currently available up to the count passed in \c bytes parameter and then
+    returns immediately. If no data is available, it will sleep until timeout
+    and then try to read. If there is still no data, it will return.
+
+    This method does not guarantee that any data will be read or that \c bytes
+    count of bytes will be read.
+
+    @param bytes a maximum count of bytes to read
+    @param timeout timeout in milliseconds; if 0 or negative, the method will return immediately if there is no data
+    available
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+    @throw PROCESS-READ-ERROR in case of read error
+    @throw PROCESS-STREAM-ERROR in case the \a stderr option was used with an \c OutputStream argument in the
+    constructor()
+
+    @returns a binary value with the raw data read data or NOTHING if no data is available
+
+    @note This method will throw a \c PROCESS-STREAM-ERROR if an \c OutputStream argument was used in the \a stdout
+    option in the constructor()
+ */
+*binary Process::readStderrBinary(int bytes, timeout timeout = 0) {
+    if (bytes < 0)
+        return QoreValue();
+
+    if (timeout > 0)
+        return priv->readStderrBinaryTimeout(static_cast<size_t>(bytes), timeout, xsink);
+    return priv->readStderrBinary(static_cast<size_t>(bytes), xsink);
+}
+
 //! Returns process information for the process managed by the current object
 /**
     @return a @ref MemorySummaryInfo hash of memory info
 
-    @throw PROCESS-GETMEMORYINFO-ERROR an error occurred querying the process's memory usage (PID does not exist or no permission to read the process's virtual memory tables)
-    @throw PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
+    @throw PROCESS-GETMEMORYINFO-ERROR an error occurred querying the process's memory usage (PID does not exist or no
+    permission to read the process's virtual memory tables)
+    @throw PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this
+    method on the current platform
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
 
     @note
-    - this method has been implemented for Linux and MacOS only; on all other platforms a \c PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR exception is thrown
-    - on MacOS the memory of another process cannot be read unless the calling process has root privileges or the process has the \c "com.apple.system-task-ports" entitlement
+    - this method has been implemented for Linux and MacOS only; on all other platforms a
+      \c PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR exception is thrown
+    - on MacOS the memory of another process cannot be read unless the calling process has root privileges or the
+      process has the \c "com.apple.system-task-ports" entitlement
 
     @see HAVE_PROCESS_GETMEMORYINFO
 */
@@ -506,12 +639,16 @@ static *string Process::searchPath(string command, hash opts) {
 /**
     @return a @ref MemorySummaryInfo hash of memory info
 
-    @throw PROCESS-GETMEMORYINFO-ERROR an error occurred querying the process's memory usage (PID does not exist or no permission to read the process's virtual memory tables)
-    @throw PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
+    @throw PROCESS-GETMEMORYINFO-ERROR an error occurred querying the process's memory usage (PID does not exist or no
+    permission to read the process's virtual memory tables)
+    @throw PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this
+    method on the current platform
 
     @note
-    - this method has been implemented for Linux and MacOS only; on all other platforms a \c PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR exception is thrown
-    - on MacOS the memory of another process cannot be read unless the calling process has root privileges or the process has the \c "com.apple.system-task-ports" entitlement
+    - this method has been implemented for Linux and MacOS only; on all other platforms a
+      \c PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR exception is thrown
+    - on MacOS the memory of another process cannot be read unless the calling process has root privileges or the
+      process has the \c "com.apple.system-task-ports" entitlement
 
     @see HAVE_PROCESS_GETMEMORYINFO
 */
@@ -525,12 +662,16 @@ static hash<MemorySummaryInfo> Process::getMemorySummaryInfo() {
 
     @return a @ref MemorySummaryInfo hash of memory info
 
-    @throw PROCESS-GETMEMORYINFO-ERROR an error occurred querying the process's memory usage (PID does not exist or no permission to read the process's virtual memory tables)
-    @throw PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
+    @throw PROCESS-GETMEMORYINFO-ERROR an error occurred querying the process's memory usage (PID does not exist or no
+    permission to read the process's virtual memory tables)
+    @throw PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this
+    method on the current platform
 
     @note
-    - this method has been implemented for Linux and MacOS only; on all other platforms a \c PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR exception is thrown
-    - on MacOS the memory of another process cannot be read unless the calling process has root privileges or the process has the \c "com.apple.system-task-ports" entitlement
+    - this method has been implemented for Linux and MacOS only; on all other platforms a
+      \c PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR exception is thrown
+    - on MacOS the memory of another process cannot be read unless the calling process has root privileges or the
+      process has the \c "com.apple.system-task-ports" entitlement
 
     @see HAVE_PROCESS_GETMEMORYINFO
 */
@@ -544,9 +685,11 @@ static hash<MemorySummaryInfo> Process::getMemorySummaryInfo(int pid) {
 
     @return @ref Qore::True "True" if the process is running, @ref Qore::False "False" if not
 
-    @throw PROCESS-CHECKPID-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
+    @throw PROCESS-CHECKPID-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method
+    on the current platform
 
-    @note this method has been implemented for Unix and Unix-like systems only; on all other platforms a \c PROCESS-CHECKPID-UNSUPPORTED-ERROR exception is thrown
+    @note this method has been implemented for Unix and Unix-like systems only; on all other platforms a
+    \c PROCESS-CHECKPID-UNSUPPORTED-ERROR exception is thrown
 
     @see
     - @ref HAVE_PROCESS_CHECKPID
@@ -562,9 +705,11 @@ static bool Process::checkPid(int pid) {
 
     @throw PROCESS-TERMINATE-ERROR insufficient permissions to terminate process
     @throw PROCESS-INVALID-PID invalid PID
-    @throw PROCESS-TERMINATE-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
+    @throw PROCESS-TERMINATE-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method
+    on the current platform
 
-    @note this method will also clean up any child processes if necessary (i.e. on Unix-like platforms) in case the process killed is a child of the current process
+    @note this method will also clean up any child processes if necessary (i.e. on Unix-like platforms) in case the
+    process killed is a child of the current process
 
     @see
     - @ref HAVE_PROCESS_TERMINATE
@@ -578,7 +723,8 @@ static nothing Process::terminate(int pid) {
 /**
     @param pid PID of the process to wait for
 
-    @throw PROCESS-WAITFORTERMINATION-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for this method on the current platform
+    @throw PROCESS-WAITFORTERMINATION-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for
+    this method on the current platform
 
     @see
     - @ref HAVE_PROCESS_WAITFORTERMINATION

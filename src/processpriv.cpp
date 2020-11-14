@@ -46,42 +46,45 @@ DLLLOCAL extern const TypedHashDecl* hashdeclMemorySummaryInfo;
 static int page_size = sysconf(_SC_PAGESIZE);
 
 ProcessPriv::ProcessPriv(pid_t pid, ExceptionSink* xsink) :
-    m_xsink(xsink),
     m_asio_ctx(),
     m_in_pipe(m_asio_ctx),
     m_out_pipe(m_asio_ctx),
     m_err_pipe(m_asio_ctx),
+
+    m_in_buf(&bg_xsink),
+    m_out_buf(&bg_xsink),
+    m_err_buf(&bg_xsink),
+
     m_in_asiobuf(boost::asio::buffer(m_in_vec)),
     m_out_asiobuf(boost::asio::buffer(m_out_vec)),
-    m_err_asiobuf(boost::asio::buffer(m_err_vec))
-{
+    m_err_asiobuf(boost::asio::buffer(m_err_vec)) {
     try {
         int i = boost::numeric_cast<int>(pid);
         m_process = new bp::child(i);
-    }
-    catch (const std::exception& ex) {
+    } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-CONSTRUCTOR-ERROR", ex.what());
     }
 }
 
+// default I/O buffer size
+static constexpr unsigned process_buf_size = 4096;
+
 ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, const QoreHashNode *opts, ExceptionSink* xsink) :
-    m_xsink(xsink),
     m_asio_ctx(),
     m_in_pipe(m_asio_ctx),
     m_out_pipe(m_asio_ctx),
     m_err_pipe(m_asio_ctx),
 
-    // Using 1-byte buffers here because otherwise the async_read operations
-    // block until the buffer is filled. This is obviously not good for performance
-    // and ideally 4k buffers or similar would be used, but that is not possible
-    // to do in this case.
-    m_out_vec(1),
-    m_err_vec(1),
+    m_in_buf(&bg_xsink),
+    m_out_buf(&bg_xsink),
+    m_err_buf(&bg_xsink),
+
+    m_out_vec(process_buf_size),
+    m_err_vec(process_buf_size),
 
     m_in_asiobuf(boost::asio::buffer(m_in_vec)),
     m_out_asiobuf(boost::asio::buffer(m_out_vec)),
-    m_err_asiobuf(boost::asio::buffer(m_err_vec))
-{
+    m_err_asiobuf(boost::asio::buffer(m_err_vec)) {
     // get handler pointers
     ResolvedCallReferenceNode* on_success = optsExecutor("on_success", opts, xsink);
     ResolvedCallReferenceNode* on_setup = optsExecutor("on_setup", opts, xsink);
@@ -98,6 +101,19 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
     if (xsink->isException()) {
         return;
     }
+
+    if (opts && opts->existsKey("encoding")) {
+        QoreValue n = opts->getKeyValue("encoding");
+        if (n.getType() != NT_STRING) {
+            xsink->raiseException("PROCESS-OPTION-ERROR", "Process option 'encoding' requires a 'string' argument; " \
+                "type '%s' instead", n.getTypeName());
+            return;
+        }
+        enc = QEM.findCreate(n.get<const QoreStringNode>()->c_str());
+    }
+
+    // not yet supported; not possible to read from an input stream with a timeout or to read all data available
+    //optsStdin(opts, xsink);
 
     int stdoutFD = optsStdout("stdout", opts, xsink);
     int stderrFD = optsStdout("stderr", opts, xsink);
@@ -131,26 +147,37 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
                                    on_exec_setup,
                                    on_exec_error);
 
-        launchChild(p, exeArgs, env, cwd.c_str(), handler, stdoutFile, stderrFile);
-    }
-    catch (const std::exception& ex) {
+        launchChild(p, exeArgs, env, cwd.c_str(), handler, stdoutFile, stderrFile, xsink);
+    } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-CONSTRUCTOR-ERROR", ex.what());
     }
 }
 
 ProcessPriv::~ProcessPriv() {
+    assert(!m_process);
+    assert(!bg_xsink);
+}
+
+int ProcessPriv::destructor(ExceptionSink* xsink) {
     // make sure the asio context is stopped
     m_asio_ctx.stop();
     m_asio_ctx.run();
 
     // wait for future
-    if (m_asio_ctx_run_future.valid())
+    if (m_asio_ctx_run_future.valid()) {
         m_asio_ctx_run_future.get();
+    }
+
+    // rethrows any background exceptions
+    finalizeStreams(xsink);
 
     // delete child process
-    if (m_process)
+    if (m_process) {
         delete m_process;
-    m_process = nullptr;
+        m_process = nullptr;
+    }
+
+    return *xsink ? -1 : 0;
 }
 
 ResolvedCallReferenceNode* ProcessPriv::optsExecutor(const char* name, const QoreHashNode* oh, ExceptionSink* xsink) {
@@ -160,7 +187,7 @@ ResolvedCallReferenceNode* ProcessPriv::optsExecutor(const char* name, const Qor
         if (oh->existsKey(name)) {
             QoreValue n = oh->getKeyValue(name);
             if (n.getType() != NT_RUNTIME_CLOSURE && n.getType() != NT_FUNCREF) {
-                xsink->raiseException("PROCESS-OPTIONS-ERROR",
+                xsink->raiseException("PROCESS-OPTION-ERROR",
                                       "executor '%s' required code as value, got: '%s'(%d)",
                                       name,
                                       n.getTypeName(),
@@ -186,7 +213,7 @@ bp::environment ProcessPriv::optsEnv(const QoreHashNode* opts, ExceptionSink* xs
     if (opts && opts->existsKey("env")) {
         QoreValue n = opts->getKeyValue("env");
         if (n.getType() != NT_HASH) {
-            xsink->raiseException("PROCESS-OPTIONS-ERROR",
+            xsink->raiseException("PROCESS-OPTION-ERROR",
                                   "Environment variables option must be a hash, got: '%s'(%d)",
                                   n.getTypeName(),
                                   n.getType()
@@ -201,8 +228,7 @@ bp::environment ProcessPriv::optsEnv(const QoreHashNode* opts, ExceptionSink* xs
         }
 
         return ret;
-    }
-    else {
+    } else {
         return boost::this_process::environment();
     }
 }
@@ -213,7 +239,7 @@ std::string ProcessPriv::optsCwd(const QoreHashNode* opts, ExceptionSink* xsink)
     if (opts && opts->existsKey("cwd")) {
         QoreValue n = opts->getKeyValue("cwd");
         if (n.getType() != NT_STRING) {
-            xsink->raiseException("PROCESS-OPTIONS-ERROR",
+            xsink->raiseException("PROCESS-OPTION-ERROR",
                                   "Working dir 'cwd' option must be a string, got: '%s'(%d)",
                                   n.getTypeName(),
                                   n.getType()
@@ -227,35 +253,90 @@ std::string ProcessPriv::optsCwd(const QoreHashNode* opts, ExceptionSink* xsink)
     return ret;
 }
 
+void ProcessPriv::optsStdin(const QoreHashNode* opts, ExceptionSink* xsink) {
+    if (!opts || !opts->existsKey("stdin")) {
+        return;
+    }
+    QoreValue n = opts->getKeyValue("stdin");
+    if (n.getType() != NT_OBJECT) {
+        xsink->raiseException("PROCESS-OPTION-ERROR",
+                                "Process constructor option 'stdin' must be an " \
+                                "InputStream object; got type '%s' instead",
+                                n.getTypeName()
+        );
+        return;
+    }
+
+    // if the above returns NT_OBJECT, then the following line must succeed
+    QoreObject* obj = n.get<QoreObject>();
+
+    // see if a usable class is accessible in this call
+    ClassAccess access;
+    bool in_hierarchy = obj->getClass()->inHierarchy(*QC_INPUTSTREAM, access);
+    if (!in_hierarchy || access != Public) {
+        xsink->raiseException("PROCESS-OPTION-ERROR", "Process constructor option 'stdin' expecting an object " \
+            "of class 'OutputStream'; got an object of class '%s' instead",
+            obj->getClassName());
+        return;
+    }
+
+    PrivateDataRefHolder<InputStream> stream(obj, CID_INPUTSTREAM, xsink);
+    if (*xsink) {
+        // an exception has already been thrown here
+        xsink->appendLastDescription(" (while processing Process constructor option 'stdin' expecting " \
+            "a valid Inputstream object)");
+        return;
+    }
+    stream->unassignThread(xsink);
+    m_in_buf.setStream(stream.release());
+}
+
 int ProcessPriv::optsStdout(const char* keyName, const QoreHashNode* opts, ExceptionSink* xsink) {
     int ret = -1;
 
     if (opts && opts->existsKey(keyName)) {
         QoreValue n = opts->getKeyValue(keyName);
         if (n.getType() != NT_OBJECT) {
-            xsink->raiseException("PROCESS-OPTIONS-ERROR",
-                                  "Process constructor option '%s' must be a File object open for writing; got: " \
-                                  "type '%s'(%d) instead",
+            xsink->raiseException("PROCESS-OPTION-ERROR",
+                                  "Process constructor option '%s' must be a File object (open for writing) or an " \
+                                  "OutputStream object; got type '%s' instead",
                                   keyName,
-                                  n.getTypeName(),
-                                  n.getType()
+                                  n.getTypeName()
             );
-            return ret;
+            return -1;
         }
 
         // if the above returns NT_OBJECT, then the following line must succeed
         QoreObject* obj = n.get<QoreObject>();
 
-        // see if the File class is accessible in this call
+        // see if a usable class is accessible in this call
         {
             ClassAccess access;
             bool in_hierarchy = obj->getClass()->inHierarchy(*QC_FILE, access);
-            if (!in_hierarchy || access == Internal) {
-                xsink->raiseException("PROCESS-OPTIONS-ERROR", "Process constructor option '%s' expecting an object " \
-                    "of class 'File'; got an object of class '%s' instead",
-                    keyName,
-                    obj->getClassName());
-                return ret;
+            if (!in_hierarchy || access != Public) {
+                in_hierarchy = obj->getClass()->inHierarchy(*QC_OUTPUTSTREAM, access);
+                if (in_hierarchy && access == Public) {
+                    PrivateDataRefHolder<OutputStream> stream(obj, CID_OUTPUTSTREAM, xsink);
+                    if (*xsink) {
+                        // an exception has already been thrown here
+                        xsink->appendLastDescription(" (while processing Process constructor option '%s' expecting " \
+                            "a valid OutputStream object)", keyName);
+                        return -1;
+                    }
+                    stream->unassignThread(xsink);
+                    if (!strcmp(keyName, "stdout")) {
+                        m_out_buf.setStream(stream.release());
+                    } else {
+                        m_err_buf.setStream(stream.release());
+                    }
+                    return -1;
+                } else {
+                    xsink->raiseException("PROCESS-OPTION-ERROR", "Process constructor option '%s' expecting an object " \
+                        "of class 'File' or 'OutputStream'; got an object of class '%s' instead",
+                        keyName,
+                        obj->getClassName());
+                    return -1;
+                }
             }
         }
 
@@ -264,16 +345,16 @@ int ProcessPriv::optsStdout(const char* keyName, const QoreHashNode* opts, Excep
             // an exception has already been thrown here
             xsink->appendLastDescription(" (while processing Process constructor option '%s' expecting a valid File " \
                 "object open for writing)", keyName);
-            return ret;
+            return -1;
         }
 
         if (!file->isOpen()) {
-            xsink->raiseException("PROCESS-OPTIONS-ERROR",
+            xsink->raiseException("PROCESS-OPTION-ERROR",
                                   "Process constructor option '%s' must be an open File object; the File object " \
                                   "passed is not open for writing",
                                   keyName
             );
-            return ret;
+            return -1;
         }
         ret = file->detachFd();
     }
@@ -288,7 +369,7 @@ boost::filesystem::path ProcessPriv::optsPath(const char* command, const QoreHas
         if (opts && opts->existsKey("path")) {
             QoreValue n = opts->getKeyValue("path");
             if (n.getType() != NT_LIST) {
-                xsink->raiseException("PROCESS-OPTIONS-ERROR",
+                xsink->raiseException("PROCESS-OPTION-ERROR",
                                       "Path option must be a list of strings, got: '%s'(%d)",
                                       n.getTypeName(),
                                       n.getType()
@@ -333,8 +414,37 @@ boost::filesystem::path ProcessPriv::optsPath(const char* command, const QoreHas
 
 bool ProcessPriv::processCheck(ExceptionSink* xsink) {
     if (!m_process) {
-        if (xsink)
+        if (xsink) {
             xsink->raiseException("PROCESS-CHECK-ERROR", "Process is not initialized");
+        }
+        return false;
+    }
+    return true;
+}
+
+bool ProcessPriv::processReadStdoutCheck(ExceptionSink* xsink) {
+    if (!processCheck(xsink)) {
+        return false;
+    }
+    if (m_out_buf.hasStream()) {
+        if (xsink) {
+            xsink->raiseException("PROCESS-STREAM-ERROR", "stdout cannot be read from the process as it's attached " \
+                "to an output stream");
+        }
+        return false;
+    }
+    return true;
+}
+
+bool ProcessPriv::processReadStderrCheck(ExceptionSink* xsink) {
+    if (!processCheck(xsink)) {
+        return false;
+    }
+    if (m_err_buf.hasStream()) {
+        if (xsink) {
+            xsink->raiseException("PROCESS-STREAM-ERROR", "stderr cannot be read from the process as it's attached " \
+                "to an output stream");
+        }
         return false;
     }
     return true;
@@ -370,7 +480,8 @@ void ProcessPriv::prepareClosures() {
 
         // continue reading if no error
         if (!ec) {
-            boost::asio::async_read(m_out_pipe, m_out_asiobuf, m_on_stdout_complete);
+            boost::asio::async_read(m_out_pipe, m_out_asiobuf, boost::asio::transfer_at_least(1),
+                m_on_stdout_complete);
         }
     };
 
@@ -381,7 +492,8 @@ void ProcessPriv::prepareClosures() {
 
         // continue reading if no error
         if (!ec) {
-            boost::asio::async_read(m_err_pipe, m_err_asiobuf, m_on_stderr_complete);
+            boost::asio::async_read(m_err_pipe, m_err_asiobuf, boost::asio::transfer_at_least(1),
+                m_on_stderr_complete);
         }
     };
 
@@ -422,8 +534,8 @@ void ProcessPriv::launchChild(boost::filesystem::path p,
                              const char* cwd,
                              QoreProcessHandler& handler,
                              FILE* stdoutFile,
-                             FILE* stderrFile)
-{
+                             FILE* stderrFile,
+                             ExceptionSink* xsink) {
     if (stdoutFile && stderrFile) {
         m_process = new bp::child(bp::exe = p.string(),
                                   bp::args = args,
@@ -434,8 +546,7 @@ void ProcessPriv::launchChild(boost::filesystem::path p,
                                   bp::std_err > stderrFile,
                                   bp::std_in < m_in_pipe,
                                   m_asio_ctx);
-    }
-    else if (stdoutFile) {
+    } else if (stdoutFile) {
         m_process = new bp::child(bp::exe = p.string(),
                                   bp::args = args,
                                   bp::env = env,
@@ -445,8 +556,7 @@ void ProcessPriv::launchChild(boost::filesystem::path p,
                                   bp::std_err > m_err_pipe,
                                   bp::std_in < m_in_pipe,
                                   m_asio_ctx);
-    }
-    else if (stderrFile) {
+    } else if (stderrFile) {
         m_process = new bp::child(bp::exe = p.string(),
                                   bp::args = args,
                                   bp::env = env,
@@ -456,8 +566,7 @@ void ProcessPriv::launchChild(boost::filesystem::path p,
                                   bp::std_err > stderrFile,
                                   bp::std_in < m_in_pipe,
                                   m_asio_ctx);
-    }
-    else {
+    } else {
         m_process = new bp::child(bp::exe = p.string(),
                                   bp::args = args,
                                   bp::env = env,
@@ -471,14 +580,27 @@ void ProcessPriv::launchChild(boost::filesystem::path p,
 
     // create async read operations
     if (!stdoutFile) {
-        boost::asio::async_read(m_out_pipe, m_out_asiobuf, m_on_stdout_complete);
+        boost::asio::async_read(m_out_pipe, m_out_asiobuf, boost::asio::transfer_at_least(1),
+            m_on_stdout_complete);
     }
     if (!stderrFile) {
-        boost::asio::async_read(m_err_pipe, m_err_asiobuf, m_on_stderr_complete);
+        boost::asio::async_read(m_err_pipe, m_err_asiobuf, boost::asio::transfer_at_least(1),
+            m_on_stderr_complete);
     }
 
     // launch async operations
-    m_asio_ctx_run_future = std::async(std::launch::async, [this]{ m_asio_ctx.run(); });
+    m_asio_ctx_run_future = std::async(std::launch::async, [this]{
+        q_register_foreign_thread();
+        ON_BLOCK_EXIT(q_deregister_foreign_thread);
+
+        m_out_buf.reassignThread();
+        m_err_buf.reassignThread();
+
+        m_asio_ctx.run();
+
+        m_out_buf.unassignThread();
+        m_err_buf.unassignThread();
+    });
 }
 
 int ProcessPriv::exitCode(ExceptionSink* xsink) {
@@ -533,6 +655,52 @@ bool ProcessPriv::running(ExceptionSink* xsink) {
     return false;
 }
 
+void ProcessPriv::finalizeStreams(ExceptionSink* xsink) {
+    ReferenceHolder<OutputStream> out(xsink);
+    ReferenceHolder<OutputStream> err(xsink);
+
+    {
+        AutoLocker al(bg_lck);
+        if (bg_xsink) {
+            xsink->assimilate(bg_xsink);
+        }
+
+        out = m_out_buf.finalize(xsink);
+        err = m_err_buf.finalize(xsink);
+    }
+}
+
+QoreStringNode* ProcessPriv::getString(QoreStringNode* str) {
+    if (!enc->isMultiByte()) {
+        return str;
+    }
+
+    // first prepend any buffered bytes to the string
+    {
+        AutoLocker al(bg_lck);
+        if (!charbuf->empty()) {
+            str->prepend((const char*)charbuf->getPtr(), charbuf->size());
+            charbuf->clear();
+        }
+    }
+
+    // check for an invalid trailing char
+    bool invalid = false;
+    size_t len = enc->getLength(str->c_str(), str->c_str() + str->size(), invalid);
+    if (invalid) {
+        printd(5, "ProcessPriv::getString() INVALID str: '%s' size: %d len: %d\n", str->c_str(), (int)str->size(), (int)len);
+        assert(str->size() > len);
+        // move invalid bytes to buffer
+        charbuf->append(str->c_str() + len, str->size() - len);
+        if (!len) {
+            str->deref();
+            return nullptr;
+        }
+        str->terminate(len);
+    }
+    return str;
+}
+
 bool ProcessPriv::wait(ExceptionSink* xsink) {
     if (!processCheck(xsink))
         return false;
@@ -540,7 +708,9 @@ bool ProcessPriv::wait(ExceptionSink* xsink) {
     try {
         if (m_process->valid()) {
             m_process->wait();
-            // TODO: exceptions + completion handler?
+
+            // rethrows any background exceptions
+            finalizeStreams(xsink);
         }
         return true;
     } catch (const std::exception& ex) {
@@ -556,7 +726,13 @@ bool ProcessPriv::wait(int64 t, ExceptionSink* xsink) {
 
     try {
         if (m_process->valid() && m_process->running()) {
-            return m_process->wait_for(std::chrono::milliseconds(t));
+            bool rv = m_process->wait_for(std::chrono::milliseconds(t));
+            if (rv == true) {
+                // rethrows any background exceptions
+                finalizeStreams(xsink);
+
+                return true;
+            }
         }
         return false;
     } catch (const std::exception& ex) {
@@ -588,85 +764,172 @@ bool ProcessPriv::terminate(ExceptionSink* xsink) {
     return false;
 }
 
-QoreValue ProcessPriv::readStderr(size_t n, ExceptionSink* xsink) {
-    if (!processCheck(xsink))
-        return QoreValue();
+QoreStringNode* ProcessPriv::readStderr(size_t n, ExceptionSink* xsink) {
+    if (!processReadStderrCheck(xsink)) {
+        return nullptr;
+    }
 
     // check size to read
     if (n <= 0)
-        return QoreValue();
+        return nullptr;
 
     try {
-        SimpleRefHolder<QoreStringNode> str(new QoreStringNode);
+        SimpleRefHolder<QoreStringNode> str(new QoreStringNode(enc));
         size_t read = m_err_buf.read(*str, n);
         if (read)
-            return str.release();
+            return getString(str.release());
     } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-READ-ERROR", ex.what());
     }
 
-    //free(buf);
-    return QoreValue();
+    return nullptr;
 }
 
-QoreValue ProcessPriv::readStderrTimeout(size_t n, int64 millis, ExceptionSink* xsink) {
-    if (!processCheck(xsink))
-        return QoreValue();
+QoreStringNode* ProcessPriv::readStderrTimeout(size_t n, int64 millis, ExceptionSink* xsink) {
+    if (!processReadStderrCheck(xsink)) {
+        return nullptr;
+    }
 
     // check size to read
     if (n <= 0)
-        return QoreValue();
+        return nullptr;
 
     try {
-        SimpleRefHolder<QoreStringNode> str(new QoreStringNode);
+        SimpleRefHolder<QoreStringNode> str(new QoreStringNode(enc));
         size_t read = m_err_buf.readTimeout(*str, n, millis);
         if (read)
-            return str.release();
+            return getString(str.release());
     } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-READ-ERROR", ex.what());
     }
 
-    return QoreValue();
+    return nullptr;
 }
 
-QoreValue ProcessPriv::readStdout(size_t n, ExceptionSink* xsink) {
-    if (!processCheck(xsink))
-        return QoreValue();
+QoreStringNode* ProcessPriv::readStdout(size_t n, ExceptionSink* xsink) {
+    if (!processReadStdoutCheck(xsink)) {
+        return nullptr;
+    }
 
     // check size to read
     if (n <= 0)
-        return QoreValue();
+        return nullptr;
 
     try {
-        SimpleRefHolder<QoreStringNode> str(new QoreStringNode);
+        SimpleRefHolder<QoreStringNode> str(new QoreStringNode(enc));
         size_t read = m_out_buf.read(*str, n);
         if (read)
-            return str.release();
+            return getString(str.release());
     } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-READ-ERROR", ex.what());
     }
 
-    return QoreValue();
+    return nullptr;
 }
 
-QoreValue ProcessPriv::readStdoutTimeout(size_t n, int64 millis, ExceptionSink* xsink) {
-    if (!processCheck(xsink))
-        return QoreValue();
+QoreStringNode* ProcessPriv::readStdoutTimeout(size_t n, int64 millis, ExceptionSink* xsink) {
+    if (!processReadStdoutCheck(xsink)) {
+        return nullptr;
+    }
 
     // check size to read
     if (n <= 0)
-        return QoreValue();
+        return nullptr;
 
     try {
-        SimpleRefHolder<QoreStringNode> str(new QoreStringNode);
+        SimpleRefHolder<QoreStringNode> str(new QoreStringNode(enc));
         size_t read = m_out_buf.readTimeout(*str, n, millis);
         if (read)
-            return str.release();
+            return getString(str.release());
     } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-READ-ERROR", ex.what());
     }
 
-    return QoreValue();
+    return nullptr;
+}
+
+BinaryNode* ProcessPriv::readStderrBinary(size_t n, ExceptionSink* xsink) {
+    if (!processReadStderrCheck(xsink)) {
+        return nullptr;
+    }
+
+    // check size to read
+    if (n <= 0)
+        return nullptr;
+
+    try {
+        SimpleRefHolder<BinaryNode> bin(new BinaryNode);
+        size_t read = m_err_buf.read(*bin, n);
+        if (read)
+            return bin.release();
+    } catch (const std::exception& ex) {
+        xsink->raiseException("PROCESS-READ-ERROR", ex.what());
+    }
+
+    return nullptr;
+}
+
+BinaryNode* ProcessPriv::readStderrBinaryTimeout(size_t n, int64 millis, ExceptionSink* xsink) {
+    if (!processReadStderrCheck(xsink)) {
+        return nullptr;
+    }
+
+    // check size to read
+    if (n <= 0)
+        return nullptr;
+
+    try {
+        SimpleRefHolder<BinaryNode> bin(new BinaryNode);
+        size_t read = m_err_buf.readTimeout(*bin, n, millis);
+        if (read)
+            return bin.release();
+    } catch (const std::exception& ex) {
+        xsink->raiseException("PROCESS-READ-ERROR", ex.what());
+    }
+
+    return nullptr;
+}
+
+BinaryNode* ProcessPriv::readStdoutBinary(size_t n, ExceptionSink* xsink) {
+    if (!processReadStdoutCheck(xsink)) {
+        return nullptr;
+    }
+
+    // check size to read
+    if (n <= 0)
+        return nullptr;
+
+    try {
+        SimpleRefHolder<BinaryNode> bin(new BinaryNode);
+        size_t read = m_out_buf.read(*bin, n);
+        if (read)
+            return bin.release();
+    } catch (const std::exception& ex) {
+        xsink->raiseException("PROCESS-READ-ERROR", ex.what());
+    }
+
+    return nullptr;
+}
+
+BinaryNode* ProcessPriv::readStdoutBinaryTimeout(size_t n, int64 millis, ExceptionSink* xsink) {
+    if (!processReadStdoutCheck(xsink)) {
+        return nullptr;
+    }
+
+    // check size to read
+    if (n <= 0)
+        return nullptr;
+
+    try {
+        SimpleRefHolder<BinaryNode> bin(new BinaryNode);
+        size_t read = m_out_buf.readTimeout(*bin, n, millis);
+        if (read)
+            return bin.release();
+    } catch (const std::exception& ex) {
+        xsink->raiseException("PROCESS-READ-ERROR", ex.what());
+    }
+
+    return nullptr;
 }
 
 void ProcessPriv::write(const char* val, size_t n, ExceptionSink* xsink) {
