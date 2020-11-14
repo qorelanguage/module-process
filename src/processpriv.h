@@ -539,6 +539,9 @@ private:
 
     //! Buffer for partial multi-byte characters
     SimpleRefHolder<BinaryNode> charbuf = new BinaryNode;
+
+    //! Counter for stream assignments
+    QoreCounter stream_cnt;
 };
 
 #endif

@@ -154,7 +154,8 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
 }
 
 ProcessPriv::~ProcessPriv() {
-    assert(!m_process);
+    // in case the object is obliterated (exception in constructor), the destructor is not run
+    delete m_process;
     assert(!bg_xsink);
 }
 
@@ -593,6 +594,8 @@ void ProcessPriv::launchChild(boost::filesystem::path p,
         q_register_foreign_thread();
         ON_BLOCK_EXIT(q_deregister_foreign_thread);
 
+        stream_cnt.inc();
+
         m_out_buf.reassignThread();
         m_err_buf.reassignThread();
 
@@ -600,6 +603,8 @@ void ProcessPriv::launchChild(boost::filesystem::path p,
 
         m_out_buf.unassignThread();
         m_err_buf.unassignThread();
+
+        stream_cnt.dec(nullptr);
     });
 }
 
@@ -656,6 +661,8 @@ bool ProcessPriv::running(ExceptionSink* xsink) {
 }
 
 void ProcessPriv::finalizeStreams(ExceptionSink* xsink) {
+    stream_cnt.waitForZero(xsink);
+
     ReferenceHolder<OutputStream> out(xsink);
     ReferenceHolder<OutputStream> err(xsink);
 
