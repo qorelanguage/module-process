@@ -1,7 +1,7 @@
 /*
     Qore Programming Language process Module
 
-    Copyright (C) 2003 - 2019 Qore Technologies, s.r.o.
+    Copyright (C) 2003 - 2020 Qore Technologies, s.r.o.
 
     Permission is hereby granted, free of charge, to any person obtaining a
     copy of this software and associated documentation files (the "Software"),
@@ -30,7 +30,8 @@
 
     @section processintro Process Module Introduction
 
-The %process module is a Qore wrapper around <a href="http://www.boost.org/doc/libs/release/libs/process/">Boost.Process</a> by Klemens David Morgenstern.
+The %process module is a Qore wrapper around
+<a href="http://www.boost.org/doc/libs/release/libs/process/">Boost.Process</a> by Klemens David Morgenstern.
 
 Primary class provided by this module:
 - @ref Qore::Process::Process "Process"
@@ -52,8 +53,19 @@ Version 1.0. (See http://www.boost.org/LICENSE_1_0.txt)
 
     @section process_relnotes Process Module Release History
 
+    @subsection process_v1_0_0 process v1.0.0
+    - added:
+      - @ref Qore::Process::Process::readStdoutBinary() "Process::readStdoutBinary()"
+      - @ref Qore::Process::Process::readStderrBinary() "Process::readStderrBinary()"
+    - added support for output stream options and the \a encoding option in
+      @ref Qore::Process::Process::constructor() "Process::constructor()"; string read methods also make an effort
+      to return valid multi-byte characters now as of this release
+      (<a href="https://github.com/qorelanguage/qore/issues/4080">issue 4080</a>)
+
     @subsection process_v0_0_2 process v0.0.2
-    - fixed error handling @ref Process::Process::readStdout() "Process::readStdout()" and @ref Process::Process::readStderr() "Process::readStderr()" with negative arguments (<a href="https://github.com/qorelanguage/qore/issues/2333">issue 2333</a>)
+    - fixed error handling @ref Qore::Process::Process::readStdout() "Process::readStdout()" and
+      @ref Qore::Process::Process::readStderr() "Process::readStderr()" with negative arguments
+      (<a href="https://github.com/qorelanguage/qore/issues/2333">issue 2333</a>)
 
     @subsection process_v0_0_1 process v0.0.1
     - initial release of the process module
@@ -62,7 +74,6 @@ Version 1.0. (See http://www.boost.org/LICENSE_1_0.txt)
 static QoreNamespace ProcessNS("Process");
 
 DLLLOCAL const TypedHashDecl* hashdeclMemorySummaryInfo;
-
 
 DLLLOCAL QoreClass* initProcessClass(QoreNamespace& ns);
 
@@ -83,7 +94,6 @@ void process_module_ns_init(QoreNamespace* rns, QoreNamespace* qns) {
 void process_module_delete() {
    // nothing to do here in this case
 }
-
 
 // qore module symbols
 DLLEXPORT char qore_module_name[] = "process";
