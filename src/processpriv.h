@@ -155,9 +155,7 @@ private:
 
     DLLLOCAL QoreStringNode* getString(QoreStringNode* str);
 
-    DLLLOCAL int getExitCode() const {
-        return exit_code;
-    }
+    DLLLOCAL void getExitCode(ExceptionSink* xsink);
 
 #ifdef __linux__
     DLLLOCAL static QoreHashNode* getMemorySummaryInfoLinux(int pid, ExceptionSink* xsink);

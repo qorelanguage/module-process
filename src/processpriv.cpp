@@ -151,6 +151,11 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
     } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-CONSTRUCTOR-ERROR", ex.what());
     }
+
+    // stop async I/O thread immediately before obliteration if an exception was thrown
+    if (*xsink) {
+        finalizeStreams(xsink);
+    }
 }
 
 ProcessPriv::~ProcessPriv() {
@@ -446,13 +451,11 @@ void ProcessPriv::processArgs(const QoreListNode* arguments, std::vector<std::st
     if (arguments) {
         for (qore_size_t i = 0; i < arguments->size(); i++) {
             QoreStringNodeValueHelper s(arguments->retrieveEntry(i));
-            out.push_back(s->getBuffer());
+            // ignore empty args; causes an assert on RHEL 8 in boost arg processing
+            if (!s->empty()) {
+                out.push_back(s->c_str());
+            }
         }
-    }
-
-    // make sure that there is at least one argument
-    if (out.size() == 0) {
-        out.push_back("");
     }
 }
 
@@ -580,12 +583,13 @@ void ProcessPriv::launchChild(boost::filesystem::path p,
             m_on_stderr_complete);
     }
 
+    // increment counter before launching thread
+    stream_cnt.inc();
+
     // launch async operations
     m_asio_ctx_run_future = std::async(std::launch::async, [this]{
         q_register_foreign_thread();
         ON_BLOCK_EXIT(q_deregister_foreign_thread);
-
-        stream_cnt.inc();
 
         m_out_buf.reassignThread();
         m_err_buf.reassignThread();
@@ -646,15 +650,6 @@ bool ProcessPriv::running(ExceptionSink* xsink) {
 }
 
 void ProcessPriv::finalizeStreams(ExceptionSink* xsink) {
-    // get exit code if possible
-    if (m_process) {
-        try {
-            exit_code = m_process->exit_code();
-        } catch (const std::exception& ex) {
-            xsink->raiseException("PROCESS-EXITCODE-ERROR", ex.what());
-        }
-    }
-
     // the asio context is stopped in the process handler unless the proces has been detached
     if (detached) {
         m_asio_ctx.stop();
@@ -713,6 +708,15 @@ QoreStringNode* ProcessPriv::getString(QoreStringNode* str) {
     return str;
 }
 
+void ProcessPriv::getExitCode(ExceptionSink* xsink) {
+    assert(m_process);
+    try {
+        exit_code = m_process->exit_code();
+    } catch (const std::exception& ex) {
+        xsink->raiseException("PROCESS-EXITCODE-ERROR", ex.what());
+    }
+}
+
 bool ProcessPriv::wait(ExceptionSink* xsink) {
     if (!processCheck(xsink))
         return false;
@@ -720,6 +724,9 @@ bool ProcessPriv::wait(ExceptionSink* xsink) {
     try {
         if (m_process->valid()) {
             m_process->wait();
+
+            // get exit code if possible
+            getExitCode(xsink);
 
             // rethrows any background exceptions
             finalizeStreams(xsink);
@@ -729,6 +736,9 @@ bool ProcessPriv::wait(ExceptionSink* xsink) {
         // ignore errors if the process has already terminated
         const char* err = ex.what();
         if (!strcmp("wait error: No child processes", err)) {
+            // get exit code if possible
+            getExitCode(xsink);
+
             // rethrows any background exceptions
             finalizeStreams(xsink);
             return true;
@@ -748,6 +758,9 @@ bool ProcessPriv::wait(int64 t, ExceptionSink* xsink) {
         if (m_process->valid() && m_process->running()) {
             bool rv = m_process->wait_for(std::chrono::milliseconds(t));
             if (rv) {
+                // get exit code if possible
+                getExitCode(xsink);
+
                 // rethrows any background exceptions
                 finalizeStreams(xsink);
 
@@ -759,6 +772,12 @@ bool ProcessPriv::wait(int64 t, ExceptionSink* xsink) {
         // ignore errors if the process has already terminated
         const char* err = ex.what();
         if (!strcmp("wait error: No child processes", err)) {
+            // get exit code if possible
+            try {
+                exit_code = m_process->exit_code();
+            } catch (const std::exception& ex) {
+                xsink->raiseException("PROCESS-EXITCODE-ERROR", ex.what());
+            }
             // rethrows any background exceptions
             finalizeStreams(xsink);
             return true;
