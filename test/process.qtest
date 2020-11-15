@@ -69,6 +69,7 @@ public class Main inherits QUnit::Test {
         d.chdir(get_script_dir());
         m_prefix = d.path() + DirSep;
 
+        addTestCase("wait dead", \waitDeadTest());
         addTestCase("output stream", \outputStreamTest());
         addTestCase("no cwd", \noCwdTest());
         addTestCase("SearchPath test", \searchPathTest());
@@ -99,6 +100,14 @@ public class Main inherits QUnit::Test {
 
         # Return for compatibility with test harness that checks return value.
         set_return_value(main());
+    }
+
+    waitDeadTest() {
+        Process p(getTestValue("testSleep"), 10000, ("path" : (m_prefix,)));
+        sleep(1);
+        assertEq(0, kill(p.id(), SIGKILL));
+        p.wait();
+        assertTrue(True);
     }
 
     outputStreamTest() {
@@ -197,8 +206,7 @@ public class Main inherits QUnit::Test {
         try {
             Process::searchPath("some-not-existing-exec");
             fail();
-        }
-        catch (hash<ExceptionInfo> ex) {
+        } catch (hash<ExceptionInfo> ex) {
             assertEq("PROCESS-SEARCH-PATH-ERROR", ex.err, "some-not-existing-exec for searchPath");
         }
     }
@@ -219,10 +227,10 @@ public class Main inherits QUnit::Test {
     }
 
     constructorTest() {
-        hash opts = (
-                "path" : ( m_prefix, ),
-                "env" : ( "FOO" : "bar" ) + ENV,
-            );
+        hash<auto> opts = {
+            "path": (m_prefix,),
+            "env": {"FOO": "bar"} + ENV,
+        };
 
         string exe = getTestValue("testTrue");
         softlist args = ( 1, );
@@ -258,8 +266,7 @@ public class Main inherits QUnit::Test {
             Process p("some-not-existing-exec");
             p.wait();
             fail();
-        }
-        catch (hash<ExceptionInfo> ex) {
+        } catch (hash<ExceptionInfo> ex) {
             assertEq("PROCESS-SEARCH-PATH-ERROR", ex.err, "some-not-existing-exec for Process");
         }
     }
@@ -506,9 +513,9 @@ public class Main inherits QUnit::Test {
         } catch (hash<ExceptionInfo> ex) {
             assertEq("RUNTIME-TYPE-ERROR", ex.err, "on_success using code with no hash as arg: err");
             assertEq("parameter 1 ('i') expects type 'int', but got type 'hash' instead",
-                     ex.desc,
-                     "on_success using code with no hash as arg: desc"
-                    );
+                ex.desc,
+                "on_success using code with no hash as arg: desc"
+            );
         }
     }
 
@@ -626,7 +633,7 @@ public class Main inherits QUnit::Test {
     detachTest() {
         int pid;
         {
-            Process p(getTestValue("testSleep"), 5, ("path" : (m_prefix,)));
+            Process p(getTestValue("testSleep"), 100, ("path" : (m_prefix,)));
             pid = p.id();
             p.detach();
             assertTrue(p.running(), "Detached process is running");
@@ -639,6 +646,7 @@ public class Main inherits QUnit::Test {
             assertFalse(p.running(), "Detached process is not running");
             p.wait();
             assertFalse(p.running(), "Detached process is not running");
+            p.detach();
         }
     }
 

@@ -132,19 +132,19 @@ p.wait();
     - \c stderr: an opened %Qore \c File or \c OutputStream object; standard error output of the process will be
       redirected to this object.  In case an \c OutputStream object is used here, the @ref readStdout() and
       @ref readStdoutBinary() methods cannot be called, or a \c PROCESS-STREAM-ERROR exception will be thrown.
-    - \c on_success: a code/call closure with prototype <tt>sub (hash e)</tt>.
+    - \c on_success: a code/call closure with prototype <tt>sub (hash<auto> e)</tt>.
                      This handler is invoked if launching the process has succeeded.
-    - \c on_setup: a code/call closure with prototype <tt>sub (hash e)</tt>.
+    - \c on_setup: a code/call closure with prototype <tt>sub (hash<auto> e)</tt>.
                    This handler is invoked before the process in launched, to setup parameters
-    - \c on_error: a code/call closure with prototype <tt>sub (hash e)</tt>.
+    - \c on_error: a code/call closure with prototype <tt>sub (hash<auto> e)</tt>.
                    This handler is invoked if an error during launch occured.
-    - \c on_fork_error: a code/call closure with prototype <tt>sub (hash e)</tt>.
+    - \c on_fork_error: a code/call closure with prototype <tt>sub (hash<auto> e)</tt>.
                         This handler is invoked if the fork failed.
                         Posix only.
-    - \c on_exec_setup: a code/call closure with prototype <tt>sub (hash e)</tt>.
+    - \c on_exec_setup: a code/call closure with prototype <tt>sub (hash<auto> e)</tt>.
                         This handler is invoked if the fork succeeded.
                         Posix only.
-    - \c on_exec_error: a code/call closure with prototype <tt>sub (hash e)</tt>.
+    - \c on_exec_error: a code/call closure with prototype <tt>sub (hash<auto> e)</tt>.
                         This handler is invoked if the exec call errored.
                         Posix only.
 
@@ -225,7 +225,7 @@ Process::constructor(string command) {
     @throw PROCESS-OPTION-ERROR in case invalid option is passed
     @throw PROCESS-SEARCH-PATH-ERROR in case the \c command is not found in given PATH
  */
-Process::constructor(string command, hash opts) {
+Process::constructor(string command, hash<auto> opts) {
     self->setPrivate(CID_PROCESS, new ProcessPriv(command->getBuffer(), 0, opts, xsink));
 }
 
@@ -237,7 +237,7 @@ Process::constructor(string command, hash opts) {
     @throw PROCESS-CONSTRUCTOR-ERROR in case of error. Exception \c desc contains the additional information
     @throw PROCESS-SEARCH-PATH-ERROR in case the \c command is not found in given PATH
  */
-Process::constructor(string command, softlist arguments) {
+Process::constructor(string command, softlist<softstring> arguments) {
     self->setPrivate(CID_PROCESS, new ProcessPriv(command->getBuffer(), arguments, 0, xsink));
 }
 
@@ -251,7 +251,7 @@ Process::constructor(string command, softlist arguments) {
     @throw PROCESS-OPTION-ERROR in case invalid option is passed
     @throw PROCESS-SEARCH-PATH-ERROR in case the \c command is not found in given PATH
  */
-Process::constructor(string command, softlist arguments, hash opts) {
+Process::constructor(string command, softlist<softstring> arguments, hash<auto> opts) {
     self->setPrivate(CID_PROCESS, new ProcessPriv(command->getBuffer(), arguments, opts, xsink));
 }
 
@@ -587,7 +587,7 @@ nothing Process::write(number n) {
 
 //! Returns process information for the process managed by the current object
 /**
-    @return a @ref MemorySummaryInfo hash of memory info
+    @return a @ref MemorySummaryInfo hash<auto> of memory info
 
     @throw PROCESS-GETMEMORYINFO-ERROR an error occurred querying the process's memory usage (PID does not exist or no
     permission to read the process's virtual memory tables)
@@ -631,7 +631,7 @@ static *string Process::searchPath(string command) {
 
     @throw PROCESS-SEARCH-PATH-ERROR in case the \c command is not found in given PATH
  */
-static *string Process::searchPath(string command, hash opts) {
+static *string Process::searchPath(string command, hash<auto> opts) {
     return new QoreStringNode(ProcessPriv::optsPath(command->getBuffer(), opts, xsink).string());
 }
 

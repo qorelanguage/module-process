@@ -1,7 +1,7 @@
 /*
     Qore Programming Language process Module
 
-    Copyright (C) 2003 - 2019 Qore Technologies, s.r.o.
+    Copyright (C) 2003 - 2020 Qore Technologies, s.r.o.
 
     Permission is hereby granted, free of charge, to any person obtaining a
     copy of this software and associated documentation files (the "Software"),
@@ -34,7 +34,7 @@ namespace bp = boost::process;
 namespace ex = boost::process::extend;
 
 
-class QoreProcessHandler : public ex::handler {
+class QoreProcessHandler : public ex::async_handler {
 public:
     QoreProcessHandler(ExceptionSink* xsink,
                        ResolvedCallReferenceNode* on_success,
@@ -49,8 +49,7 @@ public:
         m_on_error(on_error, xsink),
         m_on_fork_error(on_fork_error, xsink),
         m_on_exec_setup(on_exec_setup, xsink),
-        m_on_exec_error(on_exec_error, xsink)
-    {
+        m_on_exec_error(on_exec_error, xsink) {
     }
 
     QoreProcessHandler(QoreProcessHandler& old) :
@@ -60,8 +59,7 @@ public:
         m_on_error(*old.m_on_error, old.m_xsink),
         m_on_fork_error(*old.m_on_fork_error, old.m_xsink),
         m_on_exec_setup(*old.m_on_exec_setup, old.m_xsink),
-        m_on_exec_error(*old.m_on_exec_error, old.m_xsink)
-    {
+        m_on_exec_error(*old.m_on_exec_error, old.m_xsink) {
         if (m_on_success)
             m_on_success->ref();
         if (m_on_setup)
@@ -110,8 +108,7 @@ public:
     void call(const char* info,
               const ResolvedCallReferenceNode* callref,
               Executor& exec,
-              const std::error_code& ec) const
-    {
+              const std::error_code& ec) const {
         if (!callref) {
             //std::cout << "    info: " << info << ": no handler installed" << std::endl;
             return;
@@ -135,6 +132,15 @@ public:
         ReferenceHolder<QoreListNode> args(new QoreListNode(autoTypeInfo), m_xsink);
         args->push(report.release(), m_xsink);
         callref->execValue(*args, m_xsink);
+    }
+
+    template<typename Executor>
+    std::function<void(int, const std::error_code&)> on_exit_handler(Executor& exec) {
+        boost::asio::io_context& ios = ex::get_io_context(exec.seq);
+        return [&ios](int exit_code, const std::error_code& ec) {
+            ios.stop();
+            ios.run();
+        };
     }
 
 private:
