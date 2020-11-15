@@ -134,7 +134,7 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
     std::vector<std::string> exeArgs;
     processArgs(arguments, exeArgs);
 
-    // stdout, stderr and stdin closures setup
+    // setup stdout, stderr and stdin closures
     prepareClosures();
 
     // launch child process
@@ -160,15 +160,6 @@ ProcessPriv::~ProcessPriv() {
 }
 
 int ProcessPriv::destructor(ExceptionSink* xsink) {
-    // make sure the asio context is stopped
-    m_asio_ctx.stop();
-    m_asio_ctx.run();
-
-    // wait for future
-    if (m_asio_ctx_run_future.valid()) {
-        m_asio_ctx_run_future.get();
-    }
-
     // rethrows any background exceptions
     finalizeStreams(xsink);
 
@@ -612,13 +603,7 @@ int ProcessPriv::exitCode(ExceptionSink* xsink) {
     if (!processCheck(xsink))
         return -1;
 
-    try {
-        return m_process->exit_code();
-    } catch (const std::exception& ex) {
-        xsink->raiseException("PROCESS-EXITCODE-ERROR", ex.what());
-    }
-
-    return -1;
+    return exit_code;
 }
 
 int ProcessPriv::id(ExceptionSink* xsink) {
@@ -661,6 +646,26 @@ bool ProcessPriv::running(ExceptionSink* xsink) {
 }
 
 void ProcessPriv::finalizeStreams(ExceptionSink* xsink) {
+    // get exit code if possible
+    if (m_process) {
+        try {
+            exit_code = m_process->exit_code();
+        } catch (const std::exception& ex) {
+            xsink->raiseException("PROCESS-EXITCODE-ERROR", ex.what());
+        }
+    }
+
+    // the asio context is stopped in the process handler unless the proces has been detached
+    if (detached) {
+        m_asio_ctx.stop();
+        m_asio_ctx.run();
+    }
+
+    // wait for future
+    if (!m_out_vec.empty() && m_asio_ctx_run_future.valid()) {
+        m_asio_ctx_run_future.get();
+    }
+
     stream_cnt.waitForZero(xsink);
 
     ReferenceHolder<OutputStream> out(xsink);
@@ -721,7 +726,15 @@ bool ProcessPriv::wait(ExceptionSink* xsink) {
         }
         return true;
     } catch (const std::exception& ex) {
-        xsink->raiseException("PROCESS-WAIT-ERROR", ex.what());
+        // ignore errors if the process has already terminated
+        const char* err = ex.what();
+        if (!strcmp("wait error: No child processes", err)) {
+            // rethrows any background exceptions
+            finalizeStreams(xsink);
+            return true;
+        } else {
+            xsink->raiseException("PROCESS-WAIT-ERROR", err);
+        }
     }
 
     return false;
@@ -734,7 +747,7 @@ bool ProcessPriv::wait(int64 t, ExceptionSink* xsink) {
     try {
         if (m_process->valid() && m_process->running()) {
             bool rv = m_process->wait_for(std::chrono::milliseconds(t));
-            if (rv == true) {
+            if (rv) {
                 // rethrows any background exceptions
                 finalizeStreams(xsink);
 
@@ -743,7 +756,15 @@ bool ProcessPriv::wait(int64 t, ExceptionSink* xsink) {
         }
         return false;
     } catch (const std::exception& ex) {
-        xsink->raiseException("PROCESS-WAIT-ERROR", ex.what());
+        // ignore errors if the process has already terminated
+        const char* err = ex.what();
+        if (!strcmp("wait error: No child processes", err)) {
+            // rethrows any background exceptions
+            finalizeStreams(xsink);
+            return true;
+        } else {
+            xsink->raiseException("PROCESS-WAIT-ERROR", err);
+        }
     }
 
     return false;
@@ -754,6 +775,7 @@ bool ProcessPriv::detach(ExceptionSink* xsink) {
         return false;
 
     m_process->detach();
+    detached = true;
     return true;
 }
 

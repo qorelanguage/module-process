@@ -155,6 +155,10 @@ private:
 
     DLLLOCAL QoreStringNode* getString(QoreStringNode* str);
 
+    DLLLOCAL int getExitCode() const {
+        return exit_code;
+    }
+
 #ifdef __linux__
     DLLLOCAL static QoreHashNode* getMemorySummaryInfoLinux(int pid, ExceptionSink* xsink);
 #endif
@@ -542,6 +546,12 @@ private:
 
     //! Counter for stream assignments
     QoreCounter stream_cnt;
+
+    //! Exit code for program
+    int exit_code = -1;
+
+    //! Detached flag
+    bool detached = false;
 };
 
 #endif

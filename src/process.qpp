@@ -61,6 +61,8 @@ Version 1.0. (See http://www.boost.org/LICENSE_1_0.txt)
       @ref Qore::Process::Process::constructor() "Process::constructor()"; string read methods also make an effort
       to return valid multi-byte characters now as of this release
       (<a href="https://github.com/qorelanguage/qore/issues/4080">issue 4080</a>)
+    - @ref Qore::Process::Process::wait() "Process::wait()" will no longer throw an exception if the process has
+      already terminated
 
     @subsection process_v0_0_2 process v0.0.2
     - fixed error handling @ref Qore::Process::Process::readStdout() "Process::readStdout()" and
