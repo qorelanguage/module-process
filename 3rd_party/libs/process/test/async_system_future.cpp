@@ -24,6 +24,7 @@
 #include <array>
 
 namespace bp = boost::process;
+BOOST_AUTO_TEST_SUITE( async );
 
 BOOST_AUTO_TEST_CASE(future, *boost::unit_test::timeout(15))
 {
@@ -56,6 +57,7 @@ BOOST_AUTO_TEST_CASE(future_error, *boost::unit_test::timeout(15))
 
     ios.run();
 
-    int exit_code = 0;
-    BOOST_CHECK_THROW(exit_code = fut.get(), boost::system::system_error);
+    BOOST_CHECK_THROW(fut.get(), boost::system::system_error);
 }
+
+BOOST_AUTO_TEST_SUITE_END();
