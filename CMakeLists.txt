@@ -77,7 +77,7 @@ qore_wrap_qpp_value(QPP_SOURCES ${QPP_SRC})
 
 SET (module_name "process")
 
-add_library(${module_name} SHARED ${CPP_SRC} ${QPP_SOURCES})
+add_library(${module_name} MODULE ${CPP_SRC} ${QPP_SOURCES})
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     target_link_libraries(${module_name} proc)
