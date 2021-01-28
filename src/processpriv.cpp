@@ -722,7 +722,7 @@ bool ProcessPriv::wait(ExceptionSink* xsink) {
         return false;
 
     try {
-        if (m_process->valid()) {
+        if (m_process->valid() && m_process->running()) {
             m_process->wait();
 
             // get exit code if possible
@@ -730,6 +730,9 @@ bool ProcessPriv::wait(ExceptionSink* xsink) {
 
             // rethrows any background exceptions
             finalizeStreams(xsink);
+        } else {
+            // invalidate the exit code since the return value of m_process->exit_code() is without any meaning now
+            exit_code = 0;
         }
         return true;
     } catch (const std::exception& ex) {
@@ -766,6 +769,9 @@ bool ProcessPriv::wait(int64 t, ExceptionSink* xsink) {
 
                 return true;
             }
+        } else {
+            // invalidate the exit code since the return value of m_process->exit_code() is without any meaning now
+            exit_code = 0;
         }
         return false;
     } catch (const std::exception& ex) {
@@ -773,13 +779,11 @@ bool ProcessPriv::wait(int64 t, ExceptionSink* xsink) {
         const char* err = ex.what();
         if (!strcmp("wait error: No child processes", err)) {
             // get exit code if possible
-            try {
-                exit_code = m_process->exit_code();
-            } catch (const std::exception& ex) {
-                xsink->raiseException("PROCESS-EXITCODE-ERROR", ex.what());
-            }
+            getExitCode(xsink);
+
             // rethrows any background exceptions
             finalizeStreams(xsink);
+
             return true;
         } else {
             xsink->raiseException("PROCESS-WAIT-ERROR", err);

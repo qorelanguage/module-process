@@ -325,7 +325,7 @@ p.wait(); # a blocking/wait call
 printf("Sleep finished with code: %d\n", p.exitCode());
     @endcode
 
-    @return always returns \c True to keep compatibility with wait(timeout) version
+    @return \c True if child exited while waiting, otherwise return \c False
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
 
