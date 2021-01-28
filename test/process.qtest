@@ -12,6 +12,10 @@
 our *softbool VERBOSE;
 our Main MAIN;
 
+bool sub isAlpine() {
+    return (ENV.MACHTYPE ?? "").find("alpine") > -1;
+}
+
 class EmptyClass {
     constructor() {}
 }
@@ -45,7 +49,8 @@ public class Main inherits QUnit::Test {
                 "searchPathTest_out": "^(/usr)?/bin/ls$",
                 "simpleTest_exe": "ls",
                 "simpleTest_arg": ("-l", "-s",),
-                "executorsTest_success": "Success",
+                "executorsTest_success": isAlpine() ? "No error information" : "Success",
+                "executorsTest_exit_code_127": isAlpine() ? 383 : 127,
             },
             "WINDOWS": {
                 "searchPathTest_in": "timeout",
@@ -398,7 +403,7 @@ public class Main inherits QUnit::Test {
                         printf("    on_success attribute: %y\n", e);
 
                     assertEq("on_success", e.name, "name check");
-                    assertEq(127, e.exit, "on_success exit code check");
+                    assertEq(getTestValue("executorsTest_exit_code_127"), e.exit, "on_success exit code check");
                     assertEq(m_prefix + getTestValue("testTrue"), e.exe, "on_success exe check");
                     assertEq(0, e.error_code, "on_success error_code check");
                     assertEq(getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
@@ -441,7 +446,7 @@ public class Main inherits QUnit::Test {
             printf("executorMethod: %y\n", e);
 
         assertEq("on_success", e.name, "name check");
-        assertEq(127, e.exit, "on_success exit code check");
+        assertEq(getTestValue("executorsTest_exit_code_127"), e.exit, "on_success exit code check");
         assertEq(m_prefix + getTestValue("testTrue"), e.exe, "on_success exe check");
         assertEq(0, e.error_code, "on_success error_code check");
         assertEq(getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
@@ -453,7 +458,7 @@ public class Main inherits QUnit::Test {
             printf("executorStaticMethod: %y\n", e);
 
         MAIN.assertEq("on_success", e.name, "name check");
-        MAIN.assertEq(127, e.exit, "on_success exit code check");
+        MAIN.assertEq(MAIN.getTestValue("executorsTest_exit_code_127"), e.exit, "on_success exit code check");
         MAIN.assertEq(MAIN.prefix() + MAIN.getTestValue("testTrue"), e.exe, "on_success exe check");
         MAIN.assertEq(0, e.error_code, "on_success error_code check");
         MAIN.assertEq(MAIN.getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
@@ -466,7 +471,7 @@ public class Main inherits QUnit::Test {
             printf("executorNoHash: %y\n", e);
 
         assertEq("on_success", e.name, "name check");
-        assertEq(127, e.exit, "on_success exit code check");
+        assertEq(getTestValue("executorsTest_exit_code_127"), e.exit, "on_success exit code check");
         assertEq(m_prefix + getTestValue("testTrue"), e.exe, "on_success exe check");
         assertEq(0, e.error_code, "on_success error_code check");
         assertEq(getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
@@ -829,7 +834,7 @@ sub run_bg(Counter cnt, Process p, Main m) {
 sub executor_func(hash<auto> e) {
     if (VERBOSE > 2) printf("executor_func: %y\n", e);
     MAIN.assertEq("on_success", e.name, "name check");
-    MAIN.assertEq(127, e.exit, "on_success exit code check");
+    MAIN.assertEq(MAIN.getTestValue("executorsTest_exit_code_127"), e.exit, "on_success exit code check");
     MAIN.assertEq(MAIN.prefix() + MAIN.getTestValue("testTrue"), e.exe, "on_success exe check");
     MAIN.assertEq(0, e.error_code, "on_success error_code check");
     MAIN.assertEq(MAIN.getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
