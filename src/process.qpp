@@ -1,7 +1,7 @@
 /*
     Qore Programming Language process Module
 
-    Copyright (C) 2003 - 2020 Qore Technologies, s.r.o.
+    Copyright (C) 2003 - 2021 Qore Technologies, s.r.o.
 
     Permission is hereby granted, free of charge, to any person obtaining a
     copy of this software and associated documentation files (the "Software"),
@@ -73,7 +73,7 @@ Version 1.0. (See http://www.boost.org/LICENSE_1_0.txt)
     - initial release of the process module
 */
 
-static QoreNamespace ProcessNS("Process");
+static QoreNamespace ProcessNS("Qore::Process");
 
 DLLLOCAL const TypedHashDecl* hashdeclMemorySummaryInfo;
 
