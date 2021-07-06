@@ -1,7 +1,7 @@
 /*
     Qore Programming Language process Module
 
-    Copyright (C) 2003 - 2020 Qore Technologies, s.r.o.
+    Copyright (C) 2003 - 2021 Qore Technologies, s.r.o.
 
     Permission is hereby granted, free of charge, to any person obtaining a
     copy of this software and associated documentation files (the "Software"),
@@ -46,18 +46,18 @@ DLLLOCAL extern const TypedHashDecl* hashdeclMemorySummaryInfo;
 static int page_size = sysconf(_SC_PAGESIZE);
 
 ProcessPriv::ProcessPriv(pid_t pid, ExceptionSink* xsink) :
-    m_asio_ctx(),
-    m_in_pipe(m_asio_ctx),
-    m_out_pipe(m_asio_ctx),
-    m_err_pipe(m_asio_ctx),
+        m_asio_ctx(),
+        m_in_pipe(m_asio_ctx),
+        m_out_pipe(m_asio_ctx),
+        m_err_pipe(m_asio_ctx),
 
-    m_in_buf(&bg_xsink),
-    m_out_buf(&bg_xsink),
-    m_err_buf(&bg_xsink),
+        m_in_buf(&bg_xsink),
+        m_out_buf(&bg_xsink),
+        m_err_buf(&bg_xsink),
 
-    m_in_asiobuf(boost::asio::buffer(m_in_vec)),
-    m_out_asiobuf(boost::asio::buffer(m_out_vec)),
-    m_err_asiobuf(boost::asio::buffer(m_err_vec)) {
+        m_in_asiobuf(boost::asio::buffer(m_in_vec)),
+        m_out_asiobuf(boost::asio::buffer(m_out_vec)),
+        m_err_asiobuf(boost::asio::buffer(m_err_vec)) {
     try {
         int i = boost::numeric_cast<int>(pid);
         m_process = new bp::child(i);
@@ -70,21 +70,21 @@ ProcessPriv::ProcessPriv(pid_t pid, ExceptionSink* xsink) :
 static constexpr unsigned process_buf_size = 4096;
 
 ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, const QoreHashNode *opts, ExceptionSink* xsink) :
-    m_asio_ctx(),
-    m_in_pipe(m_asio_ctx),
-    m_out_pipe(m_asio_ctx),
-    m_err_pipe(m_asio_ctx),
+        m_asio_ctx(),
+        m_in_pipe(m_asio_ctx),
+        m_out_pipe(m_asio_ctx),
+        m_err_pipe(m_asio_ctx),
 
-    m_in_buf(&bg_xsink),
-    m_out_buf(&bg_xsink),
-    m_err_buf(&bg_xsink),
+        m_in_buf(&bg_xsink),
+        m_out_buf(&bg_xsink),
+        m_err_buf(&bg_xsink),
 
-    m_out_vec(process_buf_size),
-    m_err_vec(process_buf_size),
+        m_out_vec(process_buf_size),
+        m_err_vec(process_buf_size),
 
-    m_in_asiobuf(boost::asio::buffer(m_in_vec)),
-    m_out_asiobuf(boost::asio::buffer(m_out_vec)),
-    m_err_asiobuf(boost::asio::buffer(m_err_vec)) {
+        m_in_asiobuf(boost::asio::buffer(m_in_vec)),
+        m_out_asiobuf(boost::asio::buffer(m_out_vec)),
+        m_err_asiobuf(boost::asio::buffer(m_err_vec)) {
     // get handler pointers
     ResolvedCallReferenceNode* on_success = optsExecutor("on_success", opts, xsink);
     ResolvedCallReferenceNode* on_setup = optsExecutor("on_setup", opts, xsink);
@@ -389,7 +389,7 @@ boost::filesystem::path ProcessPriv::optsPath(const char* command, const QoreHas
         }
     } catch (std::runtime_error& ex) {
         xsink->raiseException("PROCESS-SEARCH-PATH-ERROR", ex.what());
-	return ret;
+    	return ret;
     }
 
     if (ret.empty()) {
@@ -594,7 +594,11 @@ void ProcessPriv::launchChild(boost::filesystem::path p,
         m_out_buf.reassignThread();
         m_err_buf.reassignThread();
 
-        m_asio_ctx.run();
+        try {
+            m_asio_ctx.run();
+        } catch (const std::exception& ex) {
+            printd(0, "exception in m_asio_ctx.run() in m_asio_ctx_run_future: %s", ex.what());
+        }
 
         m_out_buf.unassignThread();
         m_err_buf.unassignThread();
@@ -604,15 +608,17 @@ void ProcessPriv::launchChild(boost::filesystem::path p,
 }
 
 int ProcessPriv::exitCode(ExceptionSink* xsink) {
-    if (!processCheck(xsink))
+    if (!processCheck(xsink)) {
         return -1;
+    }
 
     return exit_code;
 }
 
 int ProcessPriv::id(ExceptionSink* xsink) {
-    if (!processCheck(xsink))
+    if (!processCheck(xsink)) {
         return -1;
+    }
 
     try {
         return m_process->id();
@@ -624,8 +630,9 @@ int ProcessPriv::id(ExceptionSink* xsink) {
 }
 
 bool ProcessPriv::valid(ExceptionSink* xsink) {
-    if (!processCheck(xsink))
+    if (!processCheck(xsink)) {
         return false;
+    }
 
     try {
         return m_process->valid();
@@ -637,23 +644,27 @@ bool ProcessPriv::valid(ExceptionSink* xsink) {
 }
 
 bool ProcessPriv::running(ExceptionSink* xsink) {
-    if (!processCheck(xsink))
+    if (!processCheck(xsink)) {
         return false;
-
-    try {
-        return m_process->running();
-    } catch (const std::exception& ex) {
-        xsink->raiseException("PROCESS-RUNNING-ERROR", ex.what());
     }
 
-    return false;
+    std::error_code ec;
+    bool rc = m_process->running(ec);
+    if (ec) {
+        xsink->raiseException("PROCESS-RUNNING-ERROR", "Process::running() failed: %s", ec.message().c_str());
+    }
+    return rc;
 }
 
 void ProcessPriv::finalizeStreams(ExceptionSink* xsink) {
     // the asio context is stopped in the process handler unless the proces has been detached
     if (detached) {
         m_asio_ctx.stop();
-        m_asio_ctx.run();
+        try {
+            m_asio_ctx.run();
+        } catch (const std::exception& ex) {
+            printd(0, "exception in m_asio_ctx.run() in ProcessPriv::finalizeStreams(): %s", ex.what());
+        }
     }
 
     // wait for future
@@ -718,12 +729,23 @@ void ProcessPriv::getExitCode(ExceptionSink* xsink) {
 }
 
 bool ProcessPriv::wait(ExceptionSink* xsink) {
-    if (!processCheck(xsink))
+    if (!processCheck(xsink)) {
         return false;
+    }
+
+    // return immediately if we already have an exit code
+    if (exit_code != -1) {
+        return true;
+    }
 
     try {
         if (m_process->valid()) {
-            m_process->wait();
+            std::error_code ec;
+            m_process->wait(ec);
+            if (ec) {
+                xsink->raiseException("PROCESS-WAIT-ERROR", "cannot wait on process: %s", ec.message().c_str());
+                return false;
+            }
 
             // get exit code if possible
             getExitCode(xsink);
@@ -733,30 +755,31 @@ bool ProcessPriv::wait(ExceptionSink* xsink) {
         }
         return true;
     } catch (const std::exception& ex) {
-        // ignore errors if the process has already terminated
         const char* err = ex.what();
-        if (!strcmp("wait error: No child processes", err)) {
-            // get exit code if possible
-            getExitCode(xsink);
-
-            // rethrows any background exceptions
-            finalizeStreams(xsink);
-            return true;
-        } else {
-            xsink->raiseException("PROCESS-WAIT-ERROR", err);
-        }
+        xsink->raiseException("PROCESS-WAIT-ERROR", err);
     }
 
     return false;
 }
 
 bool ProcessPriv::wait(int64 t, ExceptionSink* xsink) {
-    if (!processCheck(xsink))
+    if (!processCheck(xsink)) {
         return false;
+    }
+
+    // return immediately if we already have an exit code
+    if (exit_code != -1) {
+        return true;
+    }
 
     try {
-        if (m_process->valid() && m_process->running()) {
-            bool rv = m_process->wait_for(std::chrono::milliseconds(t));
+        if (m_process->valid()) {
+            std::error_code ec;
+            bool rv = m_process->wait_for(std::chrono::milliseconds(t), ec);
+            if (ec) {
+                xsink->raiseException("PROCESS-WAIT-ERROR", "cannot wait on process: %s", ec.message().c_str());
+                return false;
+            }
             if (rv) {
                 // get exit code if possible
                 getExitCode(xsink);
@@ -769,47 +792,41 @@ bool ProcessPriv::wait(int64 t, ExceptionSink* xsink) {
         }
         return false;
     } catch (const std::exception& ex) {
-        // ignore errors if the process has already terminated
         const char* err = ex.what();
-        if (!strcmp("wait error: No child processes", err)) {
-            // get exit code if possible
-            try {
-                exit_code = m_process->exit_code();
-            } catch (const std::exception& ex) {
-                xsink->raiseException("PROCESS-EXITCODE-ERROR", ex.what());
-            }
-            // rethrows any background exceptions
-            finalizeStreams(xsink);
-            return true;
-        } else {
-            xsink->raiseException("PROCESS-WAIT-ERROR", err);
-        }
+        xsink->raiseException("PROCESS-WAIT-ERROR", err);
     }
 
     return false;
 }
 
 bool ProcessPriv::detach(ExceptionSink* xsink) {
-    if (!processCheck(xsink))
+    if (!processCheck(xsink)) {
         return false;
+    }
 
-    m_process->detach();
+    try {
+        m_process->detach();
+    } catch (const std::exception& ex) {
+        const char* err = ex.what();
+        xsink->raiseException("PROCESS-WAIT-ERROR", err);
+        return false;
+    }
     detached = true;
     return true;
 }
 
 bool ProcessPriv::terminate(ExceptionSink* xsink) {
-    if (!processCheck(xsink))
+    if (!processCheck(xsink)) {
         return false;
-
-    try {
-        m_process->terminate();
-        return true;
-    } catch (const std::exception& ex) {
-        xsink->raiseException("PROCESS-TERMINATE-ERROR", ex.what());
     }
 
-    return false;
+    std::error_code ec;
+    m_process->terminate(ec);
+    if (ec) {
+        xsink->raiseException("PROCESS-TERMINATE-ERROR", "cannot terminate process: %s", ec.message().c_str());
+        return false;
+    }
+    return true;
 }
 
 QoreStringNode* ProcessPriv::readStderr(size_t n, ExceptionSink* xsink) {
@@ -981,8 +998,9 @@ BinaryNode* ProcessPriv::readStdoutBinaryTimeout(size_t n, int64 millis, Excepti
 }
 
 void ProcessPriv::write(const char* val, size_t n, ExceptionSink* xsink) {
-    if (!processCheck(xsink))
+    if (!processCheck(xsink)) {
         return;
+    }
 
     if (!val || !n)
         return;
