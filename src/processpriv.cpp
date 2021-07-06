@@ -770,6 +770,11 @@ bool ProcessPriv::wait(int64 t, ExceptionSink* xsink) {
         return false;
     }
 
+    // return immediately if we already have an exit code
+    if (exit_code != -1) {
+        return true;
+    }
+
     try {
         if (m_process->valid()) {
             std::error_code ec;
