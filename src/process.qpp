@@ -53,6 +53,11 @@ Version 1.0. (See http://www.boost.org/LICENSE_1_0.txt)
 
     @section process_relnotes Process Module Release History
 
+    @subsection process_v1_0_1 process v1.0.1
+    - fixed bugs handling retrieving process status for already-terminated processes; addressed exception handling
+      issues
+      (<a href="https://github.com/qorelanguage/qore/issues/4272">issue 4272</a>)
+
     @subsection process_v1_0_0 process v1.0.0
     - added:
       - @ref Qore::Process::Process::readStdoutBinary() "Process::readStdoutBinary()"
