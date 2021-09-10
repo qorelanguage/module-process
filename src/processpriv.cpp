@@ -608,8 +608,7 @@ void ProcessPriv::launchChild(boost::filesystem::path p,
 }
 
 int ProcessPriv::exitCode(ExceptionSink* xsink) {
-    if (!processCheck(xsink)) {
-        return -1;
+    if (!processCheck(xsink)) {        return -1;
     }
 
     return exit_code;

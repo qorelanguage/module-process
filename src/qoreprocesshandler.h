@@ -122,7 +122,7 @@ public:
 #else
         report->setKeyValue("pid", exec.proc_info.dwProcessId, m_xsink);
 #endif
-        report->setKeyValue("exit", static_cast<int64>(*(exec.exit_status)), m_xsink);
+        report->setKeyValue("exit", exec.exit_status.get()->load(), m_xsink);
 
         // std::error_code& ec to hash too
         report->setKeyValue("error_code", ec.value(), m_xsink);

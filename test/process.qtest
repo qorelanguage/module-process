@@ -41,6 +41,7 @@ public class Main inherits QUnit::Test {
         hash m_test_paths = (
             "DEFAULT": {
                 "testTrue": "test_true.q",
+                "testFalse": "test_false.q",
                 "testSleep": "test_sleep.q",
                 "testOutput": "test_output.q",
             },
@@ -50,7 +51,7 @@ public class Main inherits QUnit::Test {
                 "simpleTest_exe": "ls",
                 "simpleTest_arg": ("-l", "-s",),
                 "executorsTest_success": isAlpine() ? "No error information" : "Success",
-                "executorsTest_exit_code_127": isAlpine() ? 383 : 127,
+                "executorsTest_exit_code_383": 383,
             },
             "WINDOWS": {
                 "searchPathTest_in": "timeout",
@@ -396,49 +397,64 @@ public class Main inherits QUnit::Test {
     }
 
     executorsTest() {
-        hash<auto> opts = (
-                "path": ( m_prefix, ),
-                "on_success": sub (hash e) {
-                    if (m_options.verbose > 2)
-                        printf("    on_success attribute: %y\n", e);
+        hash<auto> opts = {
+            "path": ( m_prefix, ),
+            "on_success": sub (hash<auto> e) {
+                if (m_options.verbose > 2)
+                    printf("    on_success attribute: %y\n", e);
 
-                    assertEq("on_success", e.name, "name check");
-                    assertEq(getTestValue("executorsTest_exit_code_127"), e.exit, "on_success exit code check");
-                    assertEq(m_prefix + getTestValue("testTrue"), e.exe, "on_success exe check");
-                    assertEq(0, e.error_code, "on_success error_code check");
-                    assertEq(getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
-                    assertEq("system", e.error_category, "on_success error_category check");
-                },
-                "on_setup": sub (hash e) {
-                    if (m_options.verbose > 2)
-                        printf("    on_setup attribute: %y\n", e);
-                    assertEq("on_setup", e.name, "name check");
-                },
-                "on_error": sub (hash e) {
-                    if (m_options.verbose > 2)
-                        printf("    on_error attribute: %y\n", e);
-                    assertEq("on_error", e.name, "name check");
-                },
-                "on_fork_error": sub (hash e) {
-                    if (m_options.verbose > 2)
-                        printf("    on_fork_error attribute: %y\n", e);
-                    assertEq("on_fork_error", e.name, "name check");
-                },
-                "on_exec_setup": sub (hash e) {
-                    if (m_options.verbose > 2)
-                        printf("    on_exec_setup attribute: %y\n", e);
-                    assertEq("on_exec_setup", e.name, "name check");
-                },
-                "on_exec_error": sub (hash e) {
-                    if (m_options.verbose > 2)
-                        printf("    on_exec_error attribute: %y\n", e);
-                    assertEq("on_exec_error", e.name, "name check");
-                },
-            );
+                assertEq("on_success", e.name, "name check");
+                assertEq(getTestValue("executorsTest_exit_code_383"), e.exit, "on_success exit code check");
+                assertEq(m_prefix + getTestValue("testTrue"), e.exe, "on_success exe check");
+                assertEq(0, e.error_code, "on_success error_code check");
+                assertEq(getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
+                assertEq("system", e.error_category, "on_success error_category check");
+            },
+            "on_setup": sub (hash<auto> e) {
+                if (m_options.verbose > 2)
+                    printf("    on_setup attribute: %y\n", e);
+                assertEq("on_setup", e.name, "name check");
+            },
+            "on_error": sub (hash<auto> e) {
+                if (m_options.verbose > 2)
+                    printf("    on_error attribute: %y\n", e);
+                assertEq("on_error", e.name, "name check");
+            },
+            "on_fork_error": sub (hash<auto> e) {
+                if (m_options.verbose > 2)
+                    printf("    on_fork_error attribute: %y\n", e);
+                assertEq("on_fork_error", e.name, "name check");
+            },
+            "on_exec_setup": sub (hash<auto> e) {
+                if (m_options.verbose > 2)
+                    printf("    on_exec_setup attribute: %y\n", e);
+                assertEq("on_exec_setup", e.name, "name check");
+            },
+            "on_exec_error": sub (hash<auto> e) {
+                if (m_options.verbose > 2)
+                    printf("    on_exec_error attribute: %y\n", e);
+                assertEq("on_exec_error", e.name, "name check");
+            },
+        };
 
         Process p(getTestValue("testTrue"), opts);
         p.wait();
         assertEq(0, p.exitCode(), "expected 0 retval");
+
+        opts."on_success" = sub (hash<auto> e) {
+            if (m_options.verbose > 2)
+                printf("    on_success attribute: %y\n", e);
+
+            assertEq("on_success", e.name, "name check");
+            assertEq(getTestValue("executorsTest_exit_code_383"), e.exit, "on_success exit code check");
+            assertEq(m_prefix + getTestValue("testFalse"), e.exe, "on_success exe check");
+            assertEq(0, e.error_code, "on_success error_code check");
+            assertEq(getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
+            assertEq("system", e.error_category, "on_success error_category check");
+        },
+        p = new Process(getTestValue("testFalse"), opts);
+        p.wait();
+        assertEq(1, p.exitCode(), "expected 1 retval");
     }
 
     executorMethod(hash<auto> e) {
@@ -446,7 +462,7 @@ public class Main inherits QUnit::Test {
             printf("executorMethod: %y\n", e);
 
         assertEq("on_success", e.name, "name check");
-        assertEq(getTestValue("executorsTest_exit_code_127"), e.exit, "on_success exit code check");
+        assertEq(getTestValue("executorsTest_exit_code_383"), e.exit, "on_success exit code check");
         assertEq(m_prefix + getTestValue("testTrue"), e.exe, "on_success exe check");
         assertEq(0, e.error_code, "on_success error_code check");
         assertEq(getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
@@ -458,7 +474,7 @@ public class Main inherits QUnit::Test {
             printf("executorStaticMethod: %y\n", e);
 
         MAIN.assertEq("on_success", e.name, "name check");
-        MAIN.assertEq(MAIN.getTestValue("executorsTest_exit_code_127"), e.exit, "on_success exit code check");
+        MAIN.assertEq(MAIN.getTestValue("executorsTest_exit_code_383"), e.exit, "on_success exit code check");
         MAIN.assertEq(MAIN.prefix() + MAIN.getTestValue("testTrue"), e.exe, "on_success exe check");
         MAIN.assertEq(0, e.error_code, "on_success error_code check");
         MAIN.assertEq(MAIN.getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
@@ -471,7 +487,7 @@ public class Main inherits QUnit::Test {
             printf("executorNoHash: %y\n", e);
 
         assertEq("on_success", e.name, "name check");
-        assertEq(getTestValue("executorsTest_exit_code_127"), e.exit, "on_success exit code check");
+        assertEq(getTestValue("executorsTest_exit_code_383"), e.exit, "on_success exit code check");
         assertEq(m_prefix + getTestValue("testTrue"), e.exe, "on_success exe check");
         assertEq(0, e.error_code, "on_success error_code check");
         assertEq(getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
@@ -574,7 +590,7 @@ public class Main inherits QUnit::Test {
             assertEq("Environment variables option must be a hash, got: 'integer'(1)",
                      ex.desc,
                      "envVarsNegativeTest negative: desc"
-                    );
+            );
         }
     }
 
@@ -834,7 +850,7 @@ sub run_bg(Counter cnt, Process p, Main m) {
 sub executor_func(hash<auto> e) {
     if (VERBOSE > 2) printf("executor_func: %y\n", e);
     MAIN.assertEq("on_success", e.name, "name check");
-    MAIN.assertEq(MAIN.getTestValue("executorsTest_exit_code_127"), e.exit, "on_success exit code check");
+    MAIN.assertEq(MAIN.getTestValue("executorsTest_exit_code_383"), e.exit, "on_success exit code check");
     MAIN.assertEq(MAIN.prefix() + MAIN.getTestValue("testTrue"), e.exe, "on_success exe check");
     MAIN.assertEq(0, e.error_code, "on_success error_code check");
     MAIN.assertEq(MAIN.getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
