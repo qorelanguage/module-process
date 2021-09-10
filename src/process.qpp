@@ -53,6 +53,9 @@ Version 1.0. (See http://www.boost.org/LICENSE_1_0.txt)
 
     @section process_relnotes Process Module Release History
 
+    @subsection process_v1_0_2 process v1.0.2
+    - updated builtin boost to 1.71
+
     @subsection process_v1_0_1 process v1.0.1
     - fixed bugs handling retrieving process status for already-terminated processes; addressed exception handling
       issues

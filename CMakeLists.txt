@@ -8,7 +8,7 @@ option(USE_INTERNAL_BOOST "Enforce using internal copy of boost libraries" OFF)
 
 set (VERSION_MAJOR 1)
 set (VERSION_MINOR 0)
-set (VERSION_PATCH 1)
+set (VERSION_PATCH 2)
 
 # where to look first for cmake modules, before ${CMAKE_ROOT}/Modules/ is checked
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake )
@@ -17,7 +17,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake )
 find_package(Qore 0.9 REQUIRED)
 #find_package(Threads REQUIRED)
 if (NOT USE_INTERNAL_BOOST)
-    find_package(Boost 1.67 COMPONENTS filesystem system)
+    find_package(Boost 1.71 COMPONENTS filesystem system)
 endif (NOT USE_INTERNAL_BOOST)
 
 if (Boost_FOUND)
