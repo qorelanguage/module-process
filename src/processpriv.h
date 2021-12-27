@@ -146,7 +146,6 @@ private:
                               std::vector<std::string>& args,
                               bp::environment env,
                               const char* cwd,
-                              QoreProcessHandler& handler,
                               FILE* stdoutFile,
                               FILE* stderrFile,
                               ExceptionSink* xsink);
@@ -473,6 +472,9 @@ private:
             return n;
         }
     };
+
+    //! async process shandler
+    QoreProcessHandler* handler = nullptr;
 
     //! Child process.
     bp::child* m_process = nullptr;

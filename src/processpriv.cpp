@@ -69,7 +69,8 @@ ProcessPriv::ProcessPriv(pid_t pid, ExceptionSink* xsink) :
 // default I/O buffer size
 static constexpr unsigned process_buf_size = 4096;
 
-ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, const QoreHashNode *opts, ExceptionSink* xsink) :
+ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, const QoreHashNode *opts,
+        ExceptionSink* xsink) :
         m_asio_ctx(),
         m_in_pipe(m_asio_ctx),
         m_out_pipe(m_asio_ctx),
@@ -139,15 +140,16 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
 
     // launch child process
     try {
-        QoreProcessHandler handler(xsink,
-                                   on_success,
-                                   on_setup,
-                                   on_error,
-                                   on_fork_error,
-                                   on_exec_setup,
-                                   on_exec_error);
+        handler = new QoreProcessHandler(xsink,
+            on_success,
+            on_setup,
+            on_error,
+            on_fork_error,
+            on_exec_setup,
+            on_exec_error,
+            exit_code);
 
-        launchChild(p, exeArgs, env, cwd.c_str(), handler, stdoutFile, stderrFile, xsink);
+        launchChild(p, exeArgs, env, cwd.c_str(), stdoutFile, stderrFile, xsink);
     } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-CONSTRUCTOR-ERROR", ex.what());
     }
@@ -159,6 +161,9 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
 }
 
 ProcessPriv::~ProcessPriv() {
+    if (handler) {
+        delete handler;
+    }
     // in case the object is obliterated (exception in constructor), the destructor is not run
     delete m_process;
     assert(!bg_xsink);
@@ -524,19 +529,18 @@ void ProcessPriv::prepareClosures() {
 }
 
 void ProcessPriv::launchChild(boost::filesystem::path p,
-                             std::vector<std::string>& args,
-                             bp::environment env,
-                             const char* cwd,
-                             QoreProcessHandler& handler,
-                             FILE* stdoutFile,
-                             FILE* stderrFile,
-                             ExceptionSink* xsink) {
+        std::vector<std::string>& args,
+        bp::environment env,
+        const char* cwd,
+        FILE* stdoutFile,
+        FILE* stderrFile,
+        ExceptionSink* xsink) {
     if (stdoutFile && stderrFile) {
         m_process = new bp::child(bp::exe = p.string(),
                                   bp::args = args,
                                   bp::env = env,
                                   bp::start_dir = cwd,
-                                  handler,
+                                  *handler,
                                   bp::std_out > stdoutFile,
                                   bp::std_err > stderrFile,
                                   bp::std_in < m_in_pipe,
@@ -546,7 +550,7 @@ void ProcessPriv::launchChild(boost::filesystem::path p,
                                   bp::args = args,
                                   bp::env = env,
                                   bp::start_dir = cwd,
-                                  handler,
+                                  *handler,
                                   bp::std_out > stdoutFile,
                                   bp::std_err > m_err_pipe,
                                   bp::std_in < m_in_pipe,
@@ -556,7 +560,7 @@ void ProcessPriv::launchChild(boost::filesystem::path p,
                                   bp::args = args,
                                   bp::env = env,
                                   bp::start_dir = cwd,
-                                  handler,
+                                  *handler,
                                   bp::std_out > m_out_pipe,
                                   bp::std_err > stderrFile,
                                   bp::std_in < m_in_pipe,
@@ -566,7 +570,7 @@ void ProcessPriv::launchChild(boost::filesystem::path p,
                                   bp::args = args,
                                   bp::env = env,
                                   bp::start_dir = cwd,
-                                  handler,
+                                  *handler,
                                   bp::std_out > m_out_pipe,
                                   bp::std_err > m_err_pipe,
                                   bp::std_in < m_in_pipe,
@@ -608,7 +612,8 @@ void ProcessPriv::launchChild(boost::filesystem::path p,
 }
 
 int ProcessPriv::exitCode(ExceptionSink* xsink) {
-    if (!processCheck(xsink)) {        return -1;
+    if (!processCheck(xsink)) {
+        return -1;
     }
 
     return exit_code;
@@ -737,23 +742,24 @@ bool ProcessPriv::wait(ExceptionSink* xsink) {
         return true;
     }
 
+    //printd(5, "ProcessPriv::wait() valid: %d exit_code: %d\n", m_process->valid(), exit_code);
+
     try {
         if (m_process->valid()) {
             std::error_code ec;
             m_process->wait(ec);
-            if (ec) {
+            if (ec && ec != std::errc::no_child_process) {
                 xsink->raiseException("PROCESS-WAIT-ERROR", "cannot wait on process: %s", ec.message().c_str());
                 return false;
             }
 
-            // get exit code if possible
-            getExitCode(xsink);
+            if (exit_code == -1) {
+                // get exit code if possible
+                getExitCode(xsink);
+            }
 
             // rethrows any background exceptions
             finalizeStreams(xsink);
-        } else {
-            // invalidate the exit code since the return value of m_process->exit_code() is without any meaning now
-            exit_code = 0;
         }
         return true;
     } catch (const std::exception& ex) {
@@ -778,22 +784,21 @@ bool ProcessPriv::wait(int64 t, ExceptionSink* xsink) {
         if (m_process->valid()) {
             std::error_code ec;
             bool rv = m_process->wait_for(std::chrono::milliseconds(t), ec);
-            if (ec) {
+            if (ec && ec != std::errc::no_child_process) {
                 xsink->raiseException("PROCESS-WAIT-ERROR", "cannot wait on process: %s", ec.message().c_str());
                 return false;
             }
             if (rv) {
-                // get exit code if possible
-                getExitCode(xsink);
+                if (exit_code == -1) {
+                    // get exit code if possible
+                    getExitCode(xsink);
+                }
 
                 // rethrows any background exceptions
                 finalizeStreams(xsink);
 
                 return true;
             }
-        } else {
-            // invalidate the exit code since the return value of m_process->exit_code() is without any meaning now
-            exit_code = 0;
         }
         return false;
     } catch (const std::exception& ex) {

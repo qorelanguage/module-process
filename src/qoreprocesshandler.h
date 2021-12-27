@@ -1,7 +1,7 @@
 /*
     Qore Programming Language process Module
 
-    Copyright (C) 2003 - 2020 Qore Technologies, s.r.o.
+    Copyright (C) 2003 - 2021 Qore Technologies, s.r.o.
 
     Permission is hereby granted, free of charge, to any person obtaining a
     copy of this software and associated documentation files (the "Software"),
@@ -33,79 +33,60 @@
 namespace bp = boost::process;
 namespace ex = boost::process::extend;
 
-
 class QoreProcessHandler : public ex::async_handler {
 public:
-    QoreProcessHandler(ExceptionSink* xsink,
-                       ResolvedCallReferenceNode* on_success,
-                       ResolvedCallReferenceNode* on_setup,
-                       ResolvedCallReferenceNode* on_error,
-                       ResolvedCallReferenceNode* on_fork_error,
-                       ResolvedCallReferenceNode* on_exec_setup,
-                       ResolvedCallReferenceNode* on_exec_error) :
+    DLLLOCAL QoreProcessHandler(ExceptionSink* xsink,
+            ResolvedCallReferenceNode* on_success,
+            ResolvedCallReferenceNode* on_setup,
+            ResolvedCallReferenceNode* on_error,
+            ResolvedCallReferenceNode* on_fork_error,
+            ResolvedCallReferenceNode* on_exec_setup,
+            ResolvedCallReferenceNode* on_exec_error,
+            int& exit_code) :
         m_xsink(xsink),
         m_on_success(on_success, xsink),
         m_on_setup(on_setup, xsink),
         m_on_error(on_error, xsink),
         m_on_fork_error(on_fork_error, xsink),
         m_on_exec_setup(on_exec_setup, xsink),
-        m_on_exec_error(on_exec_error, xsink) {
+        m_on_exec_error(on_exec_error, xsink),
+        exit_code(exit_code) {
     }
 
-    QoreProcessHandler(QoreProcessHandler& old) :
-        m_xsink(old.m_xsink),
-        m_on_success(*old.m_on_success, old.m_xsink),
-        m_on_setup(*old.m_on_setup, old.m_xsink),
-        m_on_error(*old.m_on_error, old.m_xsink),
-        m_on_fork_error(*old.m_on_fork_error, old.m_xsink),
-        m_on_exec_setup(*old.m_on_exec_setup, old.m_xsink),
-        m_on_exec_error(*old.m_on_exec_error, old.m_xsink) {
-        if (m_on_success)
-            m_on_success->ref();
-        if (m_on_setup)
-            m_on_setup->ref();
-        if (m_on_error)
-            m_on_error->ref();
-        if (m_on_fork_error)
-            m_on_fork_error->ref();
-        if (m_on_exec_setup)
-            m_on_exec_setup->ref();
-        if (m_on_exec_error)
-            m_on_exec_error->ref();
-    }
+    QoreProcessHandler(QoreProcessHandler& old) = delete;
 
     template<typename Executor>
-    void on_success(Executor& exec) const {
+    DLLLOCAL void on_success(Executor& exec) const {
         call("on_success", *m_on_success, exec, std::error_code());
     }
 
     template<typename Executor>
-    void on_setup(Executor& exec) const {
+    DLLLOCAL void on_setup(Executor& exec) const {
         call("on_setup", *m_on_setup, exec, std::error_code());
     }
 
     template<typename Executor>
-    void on_error(Executor& exec, const std::error_code& ec) const {
+    DLLLOCAL void on_error(Executor& exec, const std::error_code& ec) const {
         call("on_error", *m_on_error, exec, ec);
     }
 
     template<typename Executor>
-    void on_fork_error(Executor& exec, const std::error_code& ec) const {
+    DLLLOCAL void on_fork_error(Executor& exec, const std::error_code& ec) const {
         call("on_fork_error", *m_on_fork_error, exec, ec);
     }
 
     template<typename Executor>
-    void on_exec_setup(Executor& exec) const {
+    DLLLOCAL void on_exec_setup(Executor& exec) const {
         call("on_exec_setup", *m_on_exec_setup, exec, std::error_code());
     }
 
     template<typename Executor>
-    void on_exec_error(Executor& exec, const std::error_code& ec) const {
+    DLLLOCAL void on_exec_error(Executor& exec, const std::error_code& ec) const {
         call("on_exec_error", *m_on_exec_error, exec, ec);
     }
 
     template<typename Executor>
-    void call(const char* info,
+    DLLLOCAL void call(const char* info,
               const ResolvedCallReferenceNode* callref,
               Executor& exec,
               const std::error_code& ec) const {
@@ -135,16 +116,26 @@ public:
     }
 
     template<typename Executor>
-    std::function<void(int, const std::error_code&)> on_exit_handler(Executor& exec) {
+    DLLLOCAL std::function<void(int, const std::error_code&)> on_exit_handler(Executor& exec) {
         boost::asio::io_context& ios = ex::get_io_context(exec.seq);
-        return [&ios](int exit_code, const std::error_code& ec) {
+        return [this, &ios](int exit_code, const std::error_code& ec) {
             ios.stop();
             ios.run();
+
+#if defined(BOOST_POSIX_API)
+            if (WIFEXITED(exit_code)) {
+                this->exit_code = WEXITSTATUS(exit_code);
+                //printd(5, "on_exit_handler() set exit_code: %d\n", exit_code);
+            }
+#else
+            this->exit_code = exit_code;
+#endif
         };
     }
 
 private:
     ExceptionSink* m_xsink;
+    int& exit_code;
 
     ReferenceHolder<ResolvedCallReferenceNode> m_on_success;
     ReferenceHolder<ResolvedCallReferenceNode> m_on_setup;

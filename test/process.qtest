@@ -62,6 +62,7 @@ public class Main inherits QUnit::Test {
                 "simpleTest_exe": "ls",
                 "simpleTest_arg": ("-l", "-s",),
                 "executorsTest_success": "Undefined error: 0",
+                "executorsTest_exit_code_383": 383,
             },
         );
     }
