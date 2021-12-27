@@ -44,7 +44,7 @@
 
 Summary: process module for Qore
 Name: qore-process-module
-Version: 1.0.2
+Version: 1.0.3
 Release: 1%{dist}
 License: LGPL
 Group: Development/Languages
@@ -97,5 +97,8 @@ rm -rf $RPM_BUILD_ROOT
 %doc COPYING README test/process.qtest test/test_cwd.q test/test_env.q test/test_false.q test/test_io.q test/test_output.q test/test_sleep.q test/test_true.q test/test_utf8.q
 
 %changelog
+* Mon Dec 27 2021 David Nichols <david.nichols@qoretechnologies.com>
+- updated to version 1.0.3
+
 * Fri Sep 17 2021 David Nichols <david.nichols@qoretechnologies.com>
 - initial spec file
