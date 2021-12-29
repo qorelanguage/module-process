@@ -54,6 +54,9 @@ Version 1.0. (See http://www.boost.org/LICENSE_1_0.txt)
     @section process_relnotes Process Module Release History
 
     @subsection process_v1_0_3 process v1.0.3
+    - fixed a race condition with async I/O in process handled that could result in a
+      <tt>PROCESS-CONSTRUCTOR-ERROR: dup2() failed</tt> exception when starting processes
+      (<a href="https://github.com/qorelanguage/qore/issues/4303">issue 4303</a>)
     - fixed a race condition in @ref Qore::Process::Process::wait() "Process::wait()"
       (<a href="https://github.com/qorelanguage/qore/issues/4272">issue 4272</a>)
 

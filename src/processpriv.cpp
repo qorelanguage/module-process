@@ -590,8 +590,12 @@ void ProcessPriv::launchChild(boost::filesystem::path p,
     // increment counter before launching thread
     stream_cnt.inc();
 
+    // issue #4303: to avoid a race condition in async I/O where a "dup2() failed" error is raised,
+    // we wait until the I/O thread is running before continuing
+    QoreCounter started(1);
+
     // launch async operations
-    m_asio_ctx_run_future = std::async(std::launch::async, [this]{
+    m_asio_ctx_run_future = std::async(std::launch::async, [this, &started]{
         q_register_foreign_thread();
         ON_BLOCK_EXIT(q_deregister_foreign_thread);
 
@@ -599,6 +603,11 @@ void ProcessPriv::launchChild(boost::filesystem::path p,
         m_err_buf.reassignThread();
 
         try {
+            // do one non-blocking poll to ensure that everything is in place
+            m_asio_ctx.poll_one();
+            // signal the parent thread that background I/O is up and running
+            started.dec(nullptr);
+            // run the background I/O in blocking mode in the dedicated I/O thread
             m_asio_ctx.run();
         } catch (const std::exception& ex) {
             printd(0, "exception in m_asio_ctx.run() in m_asio_ctx_run_future: %s", ex.what());
@@ -607,8 +616,12 @@ void ProcessPriv::launchChild(boost::filesystem::path p,
         m_out_buf.unassignThread();
         m_err_buf.unassignThread();
 
+        // signal that the I/O thread has terminated
         stream_cnt.dec(nullptr);
     });
+
+    // wait for background I/O to be up and running before continuing
+    started.waitForZero(nullptr);
 }
 
 int ProcessPriv::exitCode(ExceptionSink* xsink) {
@@ -661,7 +674,7 @@ bool ProcessPriv::running(ExceptionSink* xsink) {
 }
 
 void ProcessPriv::finalizeStreams(ExceptionSink* xsink) {
-    // the asio context is stopped in the process handler unless the proces has been detached
+    // the asio context is stopped in the process handler unless the process has been detached
     if (detached) {
         m_asio_ctx.stop();
         try {
