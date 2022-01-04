@@ -46,7 +46,11 @@ Summary: process module for Qore
 Name: qore-process-module
 Version: 1.0.3
 Release: 1%{dist}
-License: LGPL
+%if 0%{?suse_version}
+License: LGPL-2.0+ or GPL-2.0+ or MIT
+%else
+License: LGPLv2+ or GPLv2+ or MIT
+%endif
 Group: Development/Languages
 URL: http://www.qore.org
 Source: https://github.com/qorelanguage/module-process/releases/download/release-%{version}/%{name}-%{version}.tar.bz2
