@@ -1,7 +1,7 @@
 /*
     Qore Programming Language process Module
 
-    Copyright (C) 2003 - 2021 Qore Technologies, s.r.o.
+    Copyright (C) 2003 - 2022 Qore Technologies, s.r.o.
 
     Permission is hereby granted, free of charge, to any person obtaining a
     copy of this software and associated documentation files (the "Software"),
@@ -52,6 +52,16 @@ Boost parts in src/boost are distributed under the Boost Software License,
 Version 1.0. (See http://www.boost.org/LICENSE_1_0.txt)
 
     @section process_relnotes Process Module Release History
+
+    @subsection process_v1_0_4 process v1.0.4
+    - added missing exception handling to @ref Qore::Process::Process::constructor() "Process::constructor()" to avoid
+      a crash due to unhandled C++ exceptions due to resource errors starting processes
+      (<a href="https://github.com/qorelanguage/qore/issues/4384">issue 4384</a>)
+    - added serialization to all variants of @ref Qore::Process::Process::constructor() "Process::constructor()" and
+      @ref Qore::Process::Process::destructor() "Process::destructor()" to address race conditions in the underlying
+      \c boost::process library
+      (<a href="https://github.com/qorelanguage/qore/issues/4303">issue 4303</a> and
+      <a href="https://github.com/qorelanguage/qore/issues/4293">issue 4293</a>)
 
     @subsection process_v1_0_3 process v1.0.3
     - fixed a race condition with async I/O in process handled that could result in a

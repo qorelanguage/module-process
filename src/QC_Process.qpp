@@ -1,7 +1,7 @@
 /*
     Qore Programming Language process Module
 
-    Copyright (C) 2003 - 2021 Qore Technologies, s.r.o.
+    Copyright (C) 2003 - 2022 Qore Technologies, s.r.o.
 
     Permission is hereby granted, free of charge, to any person obtaining a
     copy of this software and associated documentation files (the "Software"),
@@ -44,6 +44,10 @@
 
 DLLLOCAL extern const TypedHashDecl* hashdeclMemorySummaryInfo;
 
+// issue #4293 #4303 it appears that there are race conditions in the Boost process library
+// handling I/O when starting processes, therefore we serialize process startup
+QoreThreadLock constructor_serializer;
+
 /** @defgroup process_constants Process Constants
     Constants related to process module functionality
  */
@@ -75,11 +79,10 @@ hashdecl Qore::Process::MemorySummaryInfo {
 
 //! System process wrapper.
 /** A process is an independently executable entity, which is different
-    from a thread, in that it has it's own resources. Those include
-    memory and hardware resources.
+    from a thread, in that it has its own memory and hardware resources.
 
     Every process is identified by a unique number, called the process
-    identification digit, pid.
+    identification ID or pid.
 
     A process will return an integer value indicating whether it was
     successful. On posix there are more codes associated with that,
@@ -127,8 +130,8 @@ p.wait();
                in the Process constructors. If it's not given, parent's ENV PATH is used.
                This value is not passed to child's ENV at all.
     - \c stdout: an opened %Qore \c File or \c OutputStream object; standard output of the process will be redirected
-      to this objec.  In case an \c OutputStream object is used here, the @ref readStdout() and @ref readStdoutBinary()
-      methods cannot be called, or a \c PROCESS-STREAM-ERROR exception will be thrown.
+      to this object.  In case an \c OutputStream object is used here, the @ref readStdout() and
+      @ref readStdoutBinary() methods cannot be called, or a \c PROCESS-STREAM-ERROR exception will be thrown.
     - \c stderr: an opened %Qore \c File or \c OutputStream object; standard error output of the process will be
       redirected to this object.  In case an \c OutputStream object is used here, the @ref readStdout() and
       @ref readStdoutBinary() methods cannot be called, or a \c PROCESS-STREAM-ERROR exception will be thrown.
@@ -202,21 +205,33 @@ qclass Process [dom=EXTERNAL_PROCESS; arg=ProcessPriv* priv; ns=Qore::Process];
     @note The only functionality available when this constructor is used is id(); all other calls will fail
  */
 Process::constructor(int pid) {
-    self->setPrivate(CID_PROCESS, new ProcessPriv(pid, xsink));
+    try {
+        self->setPrivate(CID_PROCESS, new ProcessPriv(pid, xsink));
+    } catch (const std::exception& ex) {
+        xsink->raiseException("PROCESS-CONSTRUCTOR-ERROR", ex.what());
+    }
 }
 
-//! Construct a child from given arguments and launch it.
+//! Construct a child process from the given arguments and launch it.
 /**
     @param command a string with program to be run; can be either an absolute path or a simple command to be found in the search path
 
     @throw PROCESS-CONSTRUCTOR-ERROR in case of error. Exception \c desc contains the additional information
     @throw PROCESS-SEARCH-PATH-ERROR in case the \c command is not found in given PATH
+
+    @note this constructor is serialized to work around race conditions in multi-threaded contexts in
+    \c boost::process
  */
 Process::constructor(string command) {
-    self->setPrivate(CID_PROCESS, new ProcessPriv(command->getBuffer(), 0, 0, xsink));
+    AutoLocker al(constructor_serializer);
+    try {
+        self->setPrivate(CID_PROCESS, new ProcessPriv(command->c_str(), 0, 0, xsink));
+    } catch (const std::exception& ex) {
+        xsink->raiseException("PROCESS-CONSTRUCTOR-ERROR", ex.what());
+    }
 }
 
-//! Construct a child from given arguments and launch it.
+//! Construct a child process from the given arguments and launch it.
 /**
     @param command a string with program to be run; can be either an absolute path or a simple command to be found in the search path
     @param opts a hash with additional options for the child process @ref process_options
@@ -224,35 +239,60 @@ Process::constructor(string command) {
     @throw PROCESS-CONSTRUCTOR-ERROR in case of error. Exception \c desc contains the additional information
     @throw PROCESS-OPTION-ERROR in case invalid option is passed
     @throw PROCESS-SEARCH-PATH-ERROR in case the \c command is not found in given PATH
+
+    @note this constructor is serialized to work around race conditions in multi-threaded contexts in
+    \c boost::process
  */
 Process::constructor(string command, hash<auto> opts) {
-    self->setPrivate(CID_PROCESS, new ProcessPriv(command->getBuffer(), 0, opts, xsink));
+    AutoLocker al(constructor_serializer);
+    try {
+        self->setPrivate(CID_PROCESS, new ProcessPriv(command->c_str(), 0, opts, xsink));
+    } catch (const std::exception& ex) {
+        xsink->raiseException("PROCESS-CONSTRUCTOR-ERROR", ex.what());
+    }
 }
 
-//! Construct a child from given arguments and launch it.
+//! Construct a child process from the given arguments and launch it.
 /**
     @param command a string with program to be run; can be either an absolute path or a simple command to be found in the search path
     @param arguments a list with additiona \c command arguments
 
     @throw PROCESS-CONSTRUCTOR-ERROR in case of error. Exception \c desc contains the additional information
     @throw PROCESS-SEARCH-PATH-ERROR in case the \c command is not found in given PATH
+
+    @note this constructor is serialized to work around race conditions in multi-threaded contexts in
+    \c boost::process
  */
 Process::constructor(string command, softlist<softstring> arguments) {
-    self->setPrivate(CID_PROCESS, new ProcessPriv(command->getBuffer(), arguments, 0, xsink));
+    AutoLocker al(constructor_serializer);
+    try {
+        self->setPrivate(CID_PROCESS, new ProcessPriv(command->c_str(), arguments, 0, xsink));
+    } catch (const std::exception& ex) {
+        xsink->raiseException("PROCESS-CONSTRUCTOR-ERROR", ex.what());
+    }
 }
 
-//! Construct a child from given arguments and launch it.
+//! Construct a child process from the given arguments and launch it.
 /**
-    @param command a string with program to be run; can be either an absolute path or a simple command to be found in the search path
+    @param command a string with program to be run; can be either an absolute path or a simple command to be found in
+    the search path
     @param arguments a list with additiona \c command arguments
     @param opts a hash with additional options for the child process. See @ref process_options
 
     @throw PROCESS-CONSTRUCTOR-ERROR in case of error. Exception \c desc contains the additional information
     @throw PROCESS-OPTION-ERROR in case invalid option is passed
     @throw PROCESS-SEARCH-PATH-ERROR in case the \c command is not found in given PATH
- */
+
+    @note this constructor is serialized to work around race conditions in multi-threaded contexts in
+    \c boost::process
+*/
 Process::constructor(string command, softlist<softstring> arguments, hash<auto> opts) {
-    self->setPrivate(CID_PROCESS, new ProcessPriv(command->getBuffer(), arguments, opts, xsink));
+    AutoLocker al(constructor_serializer);
+    try {
+        self->setPrivate(CID_PROCESS, new ProcessPriv(command->c_str(), arguments, opts, xsink));
+    } catch (const std::exception& ex) {
+        xsink->raiseException("PROCESS-CONSTRUCTOR-ERROR", ex.what());
+    }
 }
 
 //! Copy method - instance of this class cannot be copied.
@@ -266,9 +306,15 @@ Process::copy() {
 //! Destroys the object; rethrows any pending exceptions thrown in background threads
 /**
     @throw any Any pending exception thrown in background I/O threads will be rethrown in the destructor
- */
+
+    @note this constructor is serialized to work around race conditions in multi-threaded contexts in
+    \c boost::process
+*/
 Process::destructor() {
-    priv->destructor(xsink);
+    {
+        AutoLocker al(constructor_serializer);
+        priv->destructor(xsink);
+    }
     priv->deref();
 }
 
@@ -619,7 +665,7 @@ hash<MemorySummaryInfo> Process::getMemorySummaryInfo() {
     @throw PROCESS-SEARCH-PATH-ERROR in case the \c command is not found in given PATH
  */
 static *string Process::searchPath(string command) {
-    return new QoreStringNode(ProcessPriv::optsPath(command->getBuffer(), 0, xsink).string());
+    return new QoreStringNode(ProcessPriv::optsPath(command->c_str(), 0, xsink).string());
 }
 
 //! Search for full path of command in current process's PATH
@@ -632,7 +678,7 @@ static *string Process::searchPath(string command) {
     @throw PROCESS-SEARCH-PATH-ERROR in case the \c command is not found in given PATH
  */
 static *string Process::searchPath(string command, hash<auto> opts) {
-    return new QoreStringNode(ProcessPriv::optsPath(command->getBuffer(), opts, xsink).string());
+    return new QoreStringNode(ProcessPriv::optsPath(command->c_str(), opts, xsink).string());
 }
 
 //! Returns process information for the current process

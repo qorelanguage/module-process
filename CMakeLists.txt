@@ -8,11 +8,10 @@ option(USE_INTERNAL_BOOST "Enforce using internal copy of boost libraries" OFF)
 
 set (VERSION_MAJOR 1)
 set (VERSION_MINOR 0)
-set (VERSION_PATCH 3)
+set (VERSION_PATCH 4)
 
 # where to look first for cmake modules, before ${CMAKE_ROOT}/Modules/ is checked
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake )
-
 
 find_package(Qore 1.0 REQUIRED)
 #find_package(Threads REQUIRED)
@@ -26,7 +25,6 @@ else (Boost_FOUND)
     message(WARNING "Boost NOT found - using internal copy of boost libs")
     set(BOOST_INTERNAL 1)
 endif (Boost_FOUND)
-
 
 include(CheckCXXCompilerFlag)
 CHECK_CXX_COMPILER_FLAG("-std=c++11" COMPILER_SUPPORTS_CXX11)
