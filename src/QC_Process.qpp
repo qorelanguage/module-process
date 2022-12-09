@@ -51,7 +51,7 @@ QoreThreadLock constructor_serializer;
 /** @defgroup process_constants Process Constants
     Constants related to process module functionality
  */
-//@{
+///@{
 //! defines if the @ref Qore::Process::Process::getMemorySummaryInfo() "Process::getMemorySummaryInfo()" methods are available on the current platform
 const HAVE_PROCESS_GETMEMORYINFO = bool(HAVE_PROCESS_GETMEMORYINFO);
 
@@ -63,7 +63,7 @@ const HAVE_PROCESS_TERMINATE = bool(HAVE_PROCESS_TERMINATE);
 
 //! defines if the static @ref Qore::Process::Process::waitForTermination() "Process::waitForTermination()" method is available on the current platform
 const HAVE_PROCESS_WAITFORTERMINATION = bool(HAVE_PROCESS_WAITFORTERMINATION);
-//@}
+///@}
 
 //! A hash of summary memory information as provided by @ref Qore::Process::Process::getMemorySummaryInfo() "Process::getMemorySummaryInfo()"
 /** @note On Linux, \c priv reports the sum of "proportional set sizes" for all virtual memory segments
