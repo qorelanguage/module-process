@@ -53,6 +53,9 @@ Version 1.0. (See http://www.boost.org/LICENSE_1_0.txt)
 
     @section process_relnotes Process Module Release History
 
+    @subsection process_v1_0_5 process v1.0.5
+    - Updated to build with \c qpp from %Qore 1.12.4+
+
     @subsection process_v1_0_4 process v1.0.4
     - added missing exception handling to @ref Qore::Process::Process::constructor() "Process::constructor()" to avoid
       a crash due to unhandled C++ exceptions due to resource errors starting processes

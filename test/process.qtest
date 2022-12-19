@@ -526,19 +526,12 @@ public class Main inherits QUnit::Test {
             );
         }
 
-        try {
-            hash<auto> opts = {
-                "path": (m_prefix,),
-                "on_success": sub (int i) {},
-            };
-            Process p(getTestValue("testTrue"), opts);
-        } catch (hash<ExceptionInfo> ex) {
-            assertEq("RUNTIME-TYPE-ERROR", ex.err, "on_success using code with no hash as arg: err");
-            assertEq("parameter 1 ('i') expects type 'int', but got type 'hash' instead",
-                ex.desc,
-                "on_success using code with no hash as arg: desc"
-            );
-        }
+        hash<auto> opts = {
+            "path": (m_prefix,),
+            "on_success": sub (int i) {},
+        };
+        assertThrows("RUNTIME-TYPE-ERROR", "parameter 1 \\('i'\\) expects type 'int', but got type 'hash<auto>' "
+            "instead", sub () { Process p(getTestValue("testTrue"), opts); });
     }
 
     threadTest() {
