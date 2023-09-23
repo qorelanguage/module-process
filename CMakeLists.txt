@@ -37,6 +37,9 @@ endif()
 include(CheckCXXSymbolExists)
 check_cxx_symbol_exists(kill signal.h HAVE_KILL)
 
+include(CheckIncludeFiles)
+check_include_files("sys/types.h;sys/loadavg.h" HAVE_SYS_LOADAVG_H)
+
 set(CPP_SRC
     src/processpriv.cpp
 )
