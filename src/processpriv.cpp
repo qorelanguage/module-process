@@ -1329,6 +1329,6 @@ void ProcessPriv::waitForTermination(int pid, ExceptionSink* xsink) {
         usleep(WAIT_POLL_US);
     }
 #else
-    xsink->raiseException("HAVE_PROCESS_WAITFORTERMINATION", "this call is not supported on this platform");
+    xsink->raiseException("PROCESS-WAITFORTERMINATION-UNSUPPORTED-ERROR", "this call is not supported on this platform");
 #endif
 }
