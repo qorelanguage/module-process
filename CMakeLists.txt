@@ -74,6 +74,10 @@ if (WIN32)
     set(WIN_LIBS wsock32 ws2_32)
 endif (WIN32)
 
+if (CMAKE_SYSTEM_NAME STREQUAL "SunOS")
+    set(SUNOS_LIBS proc)
+endif (CMAKE_SYSTEM_NAME STREQUAL "SunOS")
+
 qore_wrap_qpp_value(QPP_SOURCES ${QPP_SRC})
 
 SET (module_name "process")
@@ -91,7 +95,7 @@ if (DEFINED ENV{DOXYGEN_EXECUTABLE})
     set(DOXYGEN_EXECUTABLE $ENV{DOXYGEN_EXECUTABLE})
 endif()
 
-qore_external_binary_module(${module_name} "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}" ${Boost_LIBRARIES} ${WIN_LIBS})
+qore_external_binary_module(${module_name} "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}" ${Boost_LIBRARIES} ${WIN_LIBS} ${SUNOS_LIBS})
 
 qore_dist("${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}")
 
