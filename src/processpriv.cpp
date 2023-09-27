@@ -1269,6 +1269,65 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoDarwin(int pid, ExceptionSink* xs
 
     return rv.release();
 }
+
+#endif
+
+#ifdef __sun__
+#include <libproc.h>
+#include <procfs.h>
+QoreHashNode* ProcessPriv::getMemorySummaryInfoSolaris(int pid, ExceptionSink* xsink) {
+    psinfo_t psp;
+    prmap_t prp;
+    size_t vsz, rss;
+    size_t priv_size = 0;
+    ssize_t read_ret;
+    int prmap_fd;
+
+    if (proc_get_psinfo(pid, &psp) == -1) {
+        xsink->raiseException("PROCESS-GETMEMORYINFO-ERROR", "proc_get_psinfo could not read process status for PID %d", pid);
+        return nullptr;
+    }
+
+    QoreStringMaker prmap_path("/proc/%d/map", pid);
+    prmap_fd = open(prmap_path.c_str(), O_RDONLY);
+    if (prmap_fd == -1) {
+        xsink->raiseErrnoException("PROCESS-GETMEMORYINFO-ERROR", errno, "could not open virtual shared memory map '%s' for PID %d", prmap_path.c_str(), pid);
+        return nullptr;
+    }
+
+    while ((read_ret = read(prmap_fd, &prp, sizeof(prp))) == sizeof(prp)) {
+        if ((prp.pr_mflags & MA_SHARED) == 0) {
+            priv_size += prp.pr_size;
+        }
+    }
+
+    switch (read_ret) {
+        case 0:
+            break;
+        case -1:
+            xsink->raiseErrnoException("PROCESS-GETMEMORYINFO-ERROR", errno, "could not read virtual shared memory map '%s' for PID %d", prmap_path.c_str(), pid);
+            close(prmap_fd);
+            return nullptr;
+            break;
+        default:
+            xsink->raiseException("PROCESS-GETMEMORYINFO-ERROR", "failed to read a prmap structure from '%s' for PID %d, only read %d bytes\n", prmap_path.c_str(), pid, read_ret);
+            close(prmap_fd);
+            return nullptr;
+    }
+
+    close(prmap_fd);
+
+    vsz = psp.pr_size * 1024;
+    rss = psp.pr_rssize * 1024;
+
+    ReferenceHolder<QoreHashNode> rv(new QoreHashNode(hashdeclMemorySummaryInfo, xsink), xsink);
+
+    rv->setKeyValue("vsz", vsz, xsink);
+    rv->setKeyValue("rss", rss, xsink);
+    rv->setKeyValue("priv", priv_size, xsink);
+
+    return rv.release();
+}
 #endif
 
 QoreHashNode* ProcessPriv::getMemorySummaryInfo(int pid, ExceptionSink* xsink) {
@@ -1276,6 +1335,8 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfo(int pid, ExceptionSink* xsink) {
     return getMemorySummaryInfoLinux(pid, xsink);
 #elif defined(__APPLE__) && defined(__MACH__)
     return getMemorySummaryInfoDarwin(pid, xsink);
+#elif defined(__sun__)
+    return getMemorySummaryInfoSolaris(pid, xsink);
 #else
     xsink->raiseException("PROCESS-GETMEMORYINFO-UNSUPPORTED-ERROR", "this call is not supported on this platform");
     return nullptr;

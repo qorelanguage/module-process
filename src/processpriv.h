@@ -162,6 +162,9 @@ private:
 #if defined(__APPLE__) && defined(__MACH__)
     DLLLOCAL static QoreHashNode* getMemorySummaryInfoDarwin(int pid, ExceptionSink* xsink);
 #endif
+#ifdef __sun__
+    DLLLOCAL static QoreHashNode* getMemorySummaryInfoSolaris(int pid, ExceptionSink* xsink);
+#endif
 
     //! Thread-safe input buffer. Used for writing to child process's stdin.
     class InputBuffer final {
