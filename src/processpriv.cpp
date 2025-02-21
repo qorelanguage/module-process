@@ -113,6 +113,8 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
         enc = QEM.findCreate(n.get<const QoreStringNode>()->c_str());
     }
 
+    bool close_fds = opts && opts->existsKey("close_fds") && opts->getKeyValue("close_fds").getAsBool();
+
     // not yet supported; not possible to read from an input stream with a timeout or to read all data available
     //optsStdin(opts, xsink);
 
@@ -149,7 +151,7 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
             on_exec_error,
             exit_code);
 
-        launchChild(p, exeArgs, env, cwd.c_str(), stdoutFile, stderrFile, xsink);
+        launchChild(p, exeArgs, env, cwd.c_str(), stdoutFile, stderrFile, close_fds, xsink);
     } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-CONSTRUCTOR-ERROR", ex.what());
     }
@@ -528,53 +530,124 @@ void ProcessPriv::prepareClosures() {
     };
 }
 
+struct PreservedFds : boost::process::detail::handler, boost::process::detail::uses_handles {
+    std::vector<int> fds;
+    PreservedFds() : fds({0, 1, 2}) {
+    }
+
+    std::vector<int>& get_used_handles() {
+        return fds;
+    }
+};
+
 void ProcessPriv::launchChild(boost::filesystem::path p,
         std::vector<std::string>& args,
         bp::environment env,
         const char* cwd,
         FILE* stdoutFile,
         FILE* stderrFile,
+        bool close_fds,
         ExceptionSink* xsink) {
     if (stdoutFile && stderrFile) {
-        m_process = new bp::child(bp::exe = p.string(),
-                                  bp::args = args,
-                                  bp::env = env,
-                                  bp::start_dir = cwd,
-                                  *handler,
-                                  bp::std_out > stdoutFile,
-                                  bp::std_err > stderrFile,
-                                  bp::std_in < m_in_pipe,
-                                  m_asio_ctx);
+        if (close_fds) {
+            PreservedFds pfds;
+            m_process = new bp::child(bp::exe = p.string(),
+                bp::args = args,
+                bp::env = env,
+                bp::start_dir = cwd,
+                *handler,
+                bp::std_out > stdoutFile,
+                bp::std_err > stderrFile,
+                bp::std_in < m_in_pipe,
+                m_asio_ctx,
+                pfds,
+                boost::process::limit_handles);
+        } else {
+            m_process = new bp::child(bp::exe = p.string(),
+                bp::args = args,
+                bp::env = env,
+                bp::start_dir = cwd,
+                *handler,
+                bp::std_out > stdoutFile,
+                bp::std_err > stderrFile,
+                bp::std_in < m_in_pipe,
+                m_asio_ctx);
+        }
     } else if (stdoutFile) {
-        m_process = new bp::child(bp::exe = p.string(),
-                                  bp::args = args,
-                                  bp::env = env,
-                                  bp::start_dir = cwd,
-                                  *handler,
-                                  bp::std_out > stdoutFile,
-                                  bp::std_err > m_err_pipe,
-                                  bp::std_in < m_in_pipe,
-                                  m_asio_ctx);
+        if (close_fds) {
+            PreservedFds pfds;
+            m_process = new bp::child(bp::exe = p.string(),
+                bp::args = args,
+                bp::env = env,
+                bp::start_dir = cwd,
+                *handler,
+                bp::std_out > stdoutFile,
+                bp::std_err > m_err_pipe,
+                bp::std_in < m_in_pipe,
+                m_asio_ctx,
+                pfds,
+                boost::process::limit_handles);
+        } else {
+            m_process = new bp::child(bp::exe = p.string(),
+                bp::args = args,
+                bp::env = env,
+                bp::start_dir = cwd,
+                *handler,
+                bp::std_out > stdoutFile,
+                bp::std_err > m_err_pipe,
+                bp::std_in < m_in_pipe,
+                m_asio_ctx);
+        }
     } else if (stderrFile) {
-        m_process = new bp::child(bp::exe = p.string(),
-                                  bp::args = args,
-                                  bp::env = env,
-                                  bp::start_dir = cwd,
-                                  *handler,
-                                  bp::std_out > m_out_pipe,
-                                  bp::std_err > stderrFile,
-                                  bp::std_in < m_in_pipe,
-                                  m_asio_ctx);
+        if (close_fds) {
+            PreservedFds pfds;
+            m_process = new bp::child(bp::exe = p.string(),
+                bp::args = args,
+                bp::env = env,
+                bp::start_dir = cwd,
+                *handler,
+                bp::std_out > m_out_pipe,
+                bp::std_err > stderrFile,
+                bp::std_in < m_in_pipe,
+                m_asio_ctx,
+                pfds,
+                boost::process::limit_handles);
+        } else {
+            m_process = new bp::child(bp::exe = p.string(),
+                bp::args = args,
+                bp::env = env,
+                bp::start_dir = cwd,
+                *handler,
+                bp::std_out > m_out_pipe,
+                bp::std_err > stderrFile,
+                bp::std_in < m_in_pipe,
+                m_asio_ctx);
+        }
     } else {
-        m_process = new bp::child(bp::exe = p.string(),
-                                  bp::args = args,
-                                  bp::env = env,
-                                  bp::start_dir = cwd,
-                                  *handler,
-                                  bp::std_out > m_out_pipe,
-                                  bp::std_err > m_err_pipe,
-                                  bp::std_in < m_in_pipe,
-                                  m_asio_ctx);
+        if (close_fds) {
+            PreservedFds pfds;
+            m_process = new bp::child(bp::exe = p.string(),
+                bp::args = args,
+                bp::env = env,
+                bp::start_dir = cwd,
+                *handler,
+                bp::std_out > m_out_pipe,
+                bp::std_err > m_err_pipe,
+                bp::std_in < m_in_pipe,
+                m_asio_ctx,
+                pfds,
+                boost::process::limit_handles);
+        } else {
+            m_process = new bp::child(bp::exe = p.string(),
+                bp::args = args,
+                bp::env = env,
+                bp::start_dir = cwd,
+                *handler,
+                bp::std_out > m_out_pipe,
+                bp::std_err > m_err_pipe,
+                bp::std_in < m_in_pipe,
+                m_asio_ctx);
+        }
     }
 
     // create async read operations

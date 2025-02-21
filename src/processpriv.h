@@ -148,6 +148,7 @@ private:
                               const char* cwd,
                               FILE* stdoutFile,
                               FILE* stderrFile,
+                              bool close_fds,
                               ExceptionSink* xsink);
 
     DLLLOCAL void finalizeStreams(ExceptionSink* xsink);

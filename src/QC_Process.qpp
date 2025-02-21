@@ -1,7 +1,7 @@
 /*
     Qore Programming Language process Module
 
-    Copyright (C) 2003 - 2022 Qore Technologies, s.r.o.
+    Copyright (C) 2003 - 2025 Qore Technologies, s.r.o.
 
     Permission is hereby granted, free of charge, to any person obtaining a
     copy of this software and associated documentation files (the "Software"),
@@ -131,15 +131,15 @@ p.wait();
 
     @section process_options Process Options
 
-    The \c opts hash can hold following keys. All keys are optional.
-
+    The \c opts argument can take the following keys; all keys are optional:
     - \c env: replace current process's ENV with a hash of env variables.
-              Use @code ENV + ( "FOO" : "bar") @endcode is you want to merge parent's ENV to child.
+      Use @code ENV + ( "FOO" : "bar") @endcode is you want to merge parent's ENV to child.
+    - \c close_fds: close all file descriptors except \c stdin, \c stdout, and \c stderr in the child process
     - \c cwd: a string with initial "current working directory",
-              a dir which child should take as its initial work dir
+      a dir which child should take as its initial work dir
     - \c path: a list of strings. It's a custom search path to find \c command
-               in the Process constructors. If it's not given, parent's ENV PATH is used.
-               This value is not passed to child's ENV at all.
+      in the Process constructors. If it's not given, parent's ENV PATH is used.
+      This value is not passed to child's ENV at all.
     - \c stdout: an opened %Qore \c File or \c OutputStream object; standard output of the process will be redirected
       to this object.  In case an \c OutputStream object is used here, the @ref readStdout() and
       @ref readStdoutBinary() methods cannot be called, or a \c PROCESS-STREAM-ERROR exception will be thrown.
@@ -147,20 +147,20 @@ p.wait();
       redirected to this object.  In case an \c OutputStream object is used here, the @ref readStdout() and
       @ref readStdoutBinary() methods cannot be called, or a \c PROCESS-STREAM-ERROR exception will be thrown.
     - \c on_success: a code/call closure with prototype <tt>sub (hash<auto> e)</tt>.
-                     This handler is invoked if launching the process has succeeded.
+      This handler is invoked if launching the process has succeeded.
     - \c on_setup: a code/call closure with prototype <tt>sub (hash<auto> e)</tt>.
-                   This handler is invoked before the process in launched, to setup parameters
+      This handler is invoked before the process in launched, to setup parameters
     - \c on_error: a code/call closure with prototype <tt>sub (hash<auto> e)</tt>.
-                   This handler is invoked if an error during launch occured.
+      This handler is invoked if an error during launch occured.
     - \c on_fork_error: a code/call closure with prototype <tt>sub (hash<auto> e)</tt>.
-                        This handler is invoked if the fork failed.
-                        Posix only.
+      This handler is invoked if the fork failed.
+      Posix only.
     - \c on_exec_setup: a code/call closure with prototype <tt>sub (hash<auto> e)</tt>.
-                        This handler is invoked if the fork succeeded.
-                        Posix only.
+      This handler is invoked if the fork succeeded.
+      Posix only.
     - \c on_exec_error: a code/call closure with prototype <tt>sub (hash<auto> e)</tt>.
-                        This handler is invoked if the exec call errored.
-                        Posix only.
+      This handler is invoked if the exec call errored.
+      Posix only.
 
     Option example:
 
@@ -266,7 +266,7 @@ Process::constructor(string command, hash<auto> opts) {
 //! Construct a child process from the given arguments and launch it.
 /**
     @param command a string with program to be run; can be either an absolute path or a simple command to be found in the search path
-    @param arguments a list with additiona \c command arguments
+    @param arguments a list with additional \c command arguments
 
     @throw PROCESS-CONSTRUCTOR-ERROR in case of error. Exception \c desc contains the additional information
     @throw PROCESS-SEARCH-PATH-ERROR in case the \c command is not found in given PATH
