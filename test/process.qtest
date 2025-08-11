@@ -662,6 +662,7 @@ public class Main inherits QUnit::Test {
             pid = p.id();
         }
 
+        assertFalse(Process::checkPid(pid), "Process with pid %d should not be running", pid);
         assertThrows("PROCESS-CONSTRUCTOR-ERROR", sub () {
             Process p(pid);
         });

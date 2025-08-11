@@ -45,7 +45,9 @@ set(QPP_SRC
     src/QC_Process.qpp
 )
 
-include_directories( ${CMAKE_SOURCE_DIR}/src )
+include_directories(
+    ${CMAKE_SOURCE_DIR}/src
+)
 
 if (WIN32)
     add_definitions(-DWINDOWS_API)
@@ -62,10 +64,6 @@ SET (module_name "process")
 
 add_library(${module_name} MODULE ${CPP_SRC} ${QPP_SOURCES})
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    target_link_libraries(${module_name} proc)
-endif()
-
 configure_file(${CMAKE_SOURCE_DIR}/cmake/unix-config.h.cmake
 ${CMAKE_BINARY_DIR}/unix-config.h)
 
@@ -78,7 +76,11 @@ qore_external_binary_module(
     "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}"
     ${Boost_LIBRARIES} ${WIN_LIBS} ${SUNOS_LIBS}
 )
-target_link_libraries(${module_name} PRIVATE Boost::process)
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    target_link_libraries(${module_name} PRIVATE Boost::process proc)
+else()
+    target_link_libraries(${module_name} PRIVATE Boost::process)
+endif()
 
 qore_dist("${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}")
 

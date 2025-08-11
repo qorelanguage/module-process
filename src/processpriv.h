@@ -558,10 +558,10 @@ private:
     // threads waiting on the process status
     unsigned int process_status_waiting = 0;
 
-    //! Exit code for program; lock: m_mtx, cond: cond_process_status
+    //! Exit code for program; lock: mtx_process_status, cond: cond_process_status
     int exit_code = -1;
 
-    //! Running flag; lock: m_mtx, cond: cond_process_status
+    //! Running flag; lock: mtx_process_status, cond: cond_process_status
     bool running_flag = false;
 
     //! Detached flag

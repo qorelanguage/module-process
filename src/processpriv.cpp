@@ -41,27 +41,6 @@ DLLLOCAL extern const TypedHashDecl* hashdeclMemorySummaryInfo;
 
 static int page_size = sysconf(_SC_PAGESIZE);
 
-ProcessPriv::ProcessPriv(pid_t pid, ExceptionSink* xsink) :
-        m_asio_ctx(),
-        m_in_pipe(m_asio_ctx),
-        m_out_pipe(m_asio_ctx),
-        m_err_pipe(m_asio_ctx),
-
-        m_in_buf(&bg_xsink),
-        m_out_buf(&bg_xsink),
-        m_err_buf(&bg_xsink),
-
-        m_in_asiobuf(boost::asio::buffer(m_in_vec)),
-        m_out_asiobuf(boost::asio::buffer(m_out_vec)),
-        m_err_asiobuf(boost::asio::buffer(m_err_vec)) {
-    try {
-        //printd(5, "ProcessPriv::ProcessPriv(pid: %d)\n", pid);
-        m_process = new bp::process(m_asio_ctx.get_executor(), (boost::process::v2::pid_type)pid);
-    } catch (const std::exception& ex) {
-        xsink->raiseException("PROCESS-CONSTRUCTOR-ERROR", ex.what());
-    }
-}
-
 // default I/O buffer size
 static constexpr unsigned process_buf_size = 4096;
 
@@ -155,6 +134,33 @@ private:
         callref->execValue(*args, xsink);
     }
 };
+
+ProcessPriv::ProcessPriv(pid_t pid, ExceptionSink* xsink) :
+        m_asio_ctx(),
+        m_in_pipe(m_asio_ctx),
+        m_out_pipe(m_asio_ctx),
+        m_err_pipe(m_asio_ctx),
+
+        m_in_buf(&bg_xsink),
+        m_out_buf(&bg_xsink),
+        m_err_buf(&bg_xsink),
+
+        m_in_asiobuf(boost::asio::buffer(m_in_vec)),
+        m_out_asiobuf(boost::asio::buffer(m_out_vec)),
+        m_err_asiobuf(boost::asio::buffer(m_err_vec)) {
+    try {
+#ifdef __APPLE__
+        // check if process is valid and throw an exception is not
+        if (kill(pid, 0)) {
+            throw std::runtime_error("Process with PID " + std::to_string(pid) + " does not exist");
+        }
+#endif
+        //printd(5, "ProcessPriv::ProcessPriv(pid: %d)\n", pid);
+        m_process = new bp::process(m_asio_ctx.get_executor(), (boost::process::v2::pid_type)pid);
+    } catch (const std::exception& ex) {
+        xsink->raiseException("PROCESS-CONSTRUCTOR-ERROR", ex.what());
+    }
+}
 
 ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, const QoreHashNode *opts,
         ExceptionSink* xsink) :
@@ -749,12 +755,9 @@ void ProcessPriv::launchChild(ExceptionSink* xsink,
 }
 
 void ProcessPriv::setExitCode(boost::system::error_code ec, int e) {
-#if 0
-    if (ec) {
-        printd(0, "process::async_wait() failed: %s\n", ec.message().c_str());
-    }
-#endif
     std::unique_lock<std::mutex> lock(mtx_process_status);
+    //printd(5, "process::async_wait() (%d: %s) %s; setting running_flag = false (waiting: %d)\n", ec.value(),
+    //    ec.category().name(), ec.message().c_str(), process_status_waiting);
     assert(running_flag);
     running_flag = false;
     if (!ec) {
@@ -770,6 +773,7 @@ int ProcessPriv::exitCode(ExceptionSink* xsink) {
         return -1;
     }
 
+    std::lock_guard<std::mutex> lock(mtx_process_status);
     return exit_code;
 }
 
@@ -878,6 +882,11 @@ QoreStringNode* ProcessPriv::getString(QoreStringNode* str) {
 }
 
 void ProcessPriv::getExitCode(ExceptionSink* xsink) {
+    std::lock_guard<std::mutex> lock(mtx_process_status);
+    if (exit_code != -1) {
+        return;
+    }
+
     assert(m_process);
     try {
         exit_code = m_process->exit_code();
@@ -892,8 +901,11 @@ bool ProcessPriv::wait(ExceptionSink* xsink) {
     }
 
     // return immediately if we already have an exit code
-    if (exit_code != -1) {
-        return true;
+    {
+        std::lock_guard<std::mutex> lock(mtx_process_status);
+        if (exit_code != -1) {
+            return true;
+        }
     }
 
     //printd(5, "ProcessPriv::wait() valid: %d exit_code: %d\n", m_process->valid(), exit_code);
@@ -928,8 +940,11 @@ bool ProcessPriv::wait(int64 t, ExceptionSink* xsink) {
     }
 
     // return immediately if we already have an exit code
-    if (exit_code != -1) {
-        return true;
+    {
+        std::lock_guard<std::mutex> lock(mtx_process_status);
+        if (exit_code != -1) {
+            return true;
+        }
     }
 
     try {
@@ -937,35 +952,20 @@ bool ProcessPriv::wait(int64 t, ExceptionSink* xsink) {
         if (running_flag) {
             // wait for the process to finish
             ++process_status_waiting;
-            cond_process_status.wait_for(lock, std::chrono::milliseconds(t));
+            // use a predicate to handle spurious wakeups
+            cond_process_status.wait_for(lock, std::chrono::milliseconds(t),
+                [this] {
+                    return !running_flag;
+                });
             --process_status_waiting;
-        }
-        if (running_flag) {
-            return false;
+
+            if (running_flag) {
+                return false;
+            }
         }
         // rethrows any background exceptions
         finalizeStreams(xsink);
         return true;
-        /*
-        boost::system::error_code ec;
-        bool rv = m_process->wait_for(std::chrono::milliseconds(t), ec);
-        if (ec && ec != std::errc::no_child_process) {
-            xsink->raiseException("PROCESS-WAIT-ERROR", "cannot wait on process: %s", ec.message().c_str());
-            return false;
-        }
-        if (rv) {
-            if (exit_code == -1) {
-                // get exit code if possible
-                getExitCode(xsink);
-            }
-
-            // rethrows any background exceptions
-            finalizeStreams(xsink);
-
-            return true;
-        }
-        return false;
-        */
     } catch (const std::exception& ex) {
         const char* err = ex.what();
         xsink->raiseException("PROCESS-WAIT-ERROR", err);
@@ -999,7 +999,15 @@ bool ProcessPriv::terminate(ExceptionSink* xsink) {
     boost::system::error_code ec;
     m_process->terminate(ec);
     if (ec) {
-        xsink->raiseException("PROCESS-TERMINATE-ERROR", "cannot terminate process: %s", ec.message().c_str());
+        {
+            std::lock_guard<std::mutex> lock(mtx_process_status);
+            // if we waited in another thread for the exit code, then we should ignore the ECHILD error here
+            if (ec.value() == ECHILD && (exit_code != -1)) {
+                return true;
+            }
+        }
+        xsink->raiseException("PROCESS-TERMINATE-ERROR", "Cannot terminate process: (%d: %s) %s",
+            ec.value(), ec.category().name(), ec.message().c_str());
         return false;
     }
     return true;
