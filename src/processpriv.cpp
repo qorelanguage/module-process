@@ -783,7 +783,7 @@ int ProcessPriv::id(ExceptionSink* xsink) {
     }
 
     try {
-        return m_process->id();
+        return detached_pid ? detached_pid : m_process->id();
     } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-ID-ERROR", ex.what());
     }
@@ -908,19 +908,40 @@ bool ProcessPriv::wait(ExceptionSink* xsink) {
         }
     }
 
-    //printd(5, "ProcessPriv::wait() valid: %d exit_code: %d\n", m_process->valid(), exit_code);
+    //printd(0, "ProcessPriv::wait() is_open: %d detached_pid: %d exit_code: %d\n", m_process->is_open(),
+    //    detached_pid, exit_code);
 
     try {
-        boost::system::error_code ec;
-        m_process->wait(ec);
-        if (ec && ec != std::errc::no_child_process) {
-            xsink->raiseException("PROCESS-WAIT-ERROR", "cannot wait on process: %s", ec.message().c_str());
-            return false;
-        }
+        // wait on detached process
+        if (detached_pid) {
+            int wstatus;
+            if (waitpid(detached_pid, &wstatus, 0) == -1) {
+                if (errno == ECHILD) {
+                    return false;
+                }
+                xsink->raiseException("PROCESS-WAIT-ERROR", "Cannot get exit code for detached process with PID %d: "
+                    "%s", detached_pid, strerror(errno));
+                return false;
+            }
+            std::unique_lock<std::mutex> lock(mtx_process_status);
+            //printd(5, "process::async_wait() (%d: %s) %s; setting running_flag = false (waiting: %d)\n", ec.value(),
+            //    ec.category().name(), ec.message().c_str(), process_status_waiting);
+            exit_code = WEXITSTATUS(wstatus);
+            if (process_status_waiting) {
+                cond_process_status.notify_all();
+            }
+        } else {
+            boost::system::error_code ec;
+            m_process->wait(ec);
+            if (ec && ec != std::errc::no_child_process) {
+                xsink->raiseException("PROCESS-WAIT-ERROR", "cannot wait on process: %s", ec.message().c_str());
+                return false;
+            }
 
-        if (exit_code == -1) {
-            // get exit code if possible
-            getExitCode(xsink);
+            if (exit_code == -1) {
+                // get exit code if possible
+                getExitCode(xsink);
+            }
         }
 
         // rethrows any background exceptions

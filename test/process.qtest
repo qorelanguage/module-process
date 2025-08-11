@@ -642,6 +642,7 @@ public class Main inherits QUnit::Test {
             pid = p.id();
             p.detach();
             assertTrue(p.running(), "Detached process is running");
+            assertEq(pid, p.id(), "Detached process has the same PID");
         }
 
         {
@@ -652,6 +653,13 @@ public class Main inherits QUnit::Test {
             p.wait();
             assertFalse(p.running(), "Detached process is not running");
             p.detach();
+        }
+
+        {
+            Process p(getTestValue("testSleep"), 1, {"path": (m_prefix,)});
+            p.detach();
+            assertTrue(p.running(), "Detached process is running");
+            assertTrue(p.wait(), "wait() on detached process");
         }
     }
 
