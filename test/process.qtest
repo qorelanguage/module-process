@@ -38,7 +38,7 @@ public class Main inherits QUnit::Test {
         # prefix to find other test scripts
         string m_prefix;
 
-        hash m_test_paths = (
+        hash<auto> m_test_paths = (
             "DEFAULT": {
                 "testTrue": "test_true.q",
                 "testFalse": "test_false.q",
@@ -50,8 +50,6 @@ public class Main inherits QUnit::Test {
                 "searchPathTest_out": "^(/usr)?/bin/ls$",
                 "simpleTest_exe": "ls",
                 "simpleTest_arg": ("-l", "-s",),
-                "executorsTest_success": isAlpine() ? "No error information" : "Success",
-                "executorsTest_exit_code_383": 383,
             },
             "WINDOWS": {
                 "searchPathTest_in": "timeout",
@@ -61,8 +59,6 @@ public class Main inherits QUnit::Test {
                 "searchPathTest_out": dirname(ENV.SHELL) + "/hostname",
                 "simpleTest_exe": "ls",
                 "simpleTest_arg": ("-l", "-s",),
-                "executorsTest_success": "Undefined error: 0",
-                "executorsTest_exit_code_383": 383,
             },
         );
     }
@@ -110,7 +106,7 @@ public class Main inherits QUnit::Test {
     }
 
     waitDeadTest() {
-        Process p(getTestValue("testSleep"), 10000, ("path" : (m_prefix,)));
+        Process p(getTestValue("testSleep"), 10000, {"path" : (m_prefix,)});
         sleep(1);
         assertEq(0, kill(p.id(), SIGKILL));
         p.wait();
@@ -401,15 +397,13 @@ public class Main inherits QUnit::Test {
         hash<auto> opts = {
             "path": ( m_prefix, ),
             "on_success": sub (hash<auto> e) {
+                on_error printf("e: %N\n", e);
                 if (m_options.verbose > 2)
                     printf("    on_success attribute: %y\n", e);
 
                 assertEq("on_success", e.name, "name check");
-                assertEq(getTestValue("executorsTest_exit_code_383"), e.exit, "on_success exit code check");
                 assertEq(m_prefix + getTestValue("testTrue"), e.exe, "on_success exe check");
-                assertEq(0, e.error_code, "on_success error_code check");
-                assertEq(getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
-                assertEq("system", e.error_category, "on_success error_category check");
+                assertNothing(e.error_code, "on_success error_code check");
             },
             "on_setup": sub (hash<auto> e) {
                 if (m_options.verbose > 2)
@@ -447,11 +441,8 @@ public class Main inherits QUnit::Test {
                 printf("    on_success attribute: %y\n", e);
 
             assertEq("on_success", e.name, "name check");
-            assertEq(getTestValue("executorsTest_exit_code_383"), e.exit, "on_success exit code check");
             assertEq(m_prefix + getTestValue("testFalse"), e.exe, "on_success exe check");
-            assertEq(0, e.error_code, "on_success error_code check");
-            assertEq(getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
-            assertEq("system", e.error_category, "on_success error_category check");
+            assertNothing(e.error_code, "on_success error_code check");
         },
         p = new Process(getTestValue("testFalse"), opts);
         p.wait();
@@ -463,11 +454,8 @@ public class Main inherits QUnit::Test {
             printf("executorMethod: %y\n", e);
 
         assertEq("on_success", e.name, "name check");
-        assertEq(getTestValue("executorsTest_exit_code_383"), e.exit, "on_success exit code check");
         assertEq(m_prefix + getTestValue("testTrue"), e.exe, "on_success exe check");
-        assertEq(0, e.error_code, "on_success error_code check");
-        assertEq(getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
-        assertEq("system", e.error_category, "on_success error_category check");
+        assertNothing(e.error_code, "on_success error_code check");
     }
 
     static executorStaticMethod(hash<auto> e) {
@@ -475,11 +463,8 @@ public class Main inherits QUnit::Test {
             printf("executorStaticMethod: %y\n", e);
 
         MAIN.assertEq("on_success", e.name, "name check");
-        MAIN.assertEq(MAIN.getTestValue("executorsTest_exit_code_383"), e.exit, "on_success exit code check");
         MAIN.assertEq(MAIN.prefix() + MAIN.getTestValue("testTrue"), e.exe, "on_success exe check");
-        MAIN.assertEq(0, e.error_code, "on_success error_code check");
-        MAIN.assertEq(MAIN.getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
-        MAIN.assertEq("system", e.error_category, "on_success error_category check");
+        MAIN.assertNothing(e.error_code, "on_success error_code check");
     }
 
     executorNoHash() {
@@ -488,11 +473,8 @@ public class Main inherits QUnit::Test {
             printf("executorNoHash: %y\n", e);
 
         assertEq("on_success", e.name, "name check");
-        assertEq(getTestValue("executorsTest_exit_code_383"), e.exit, "on_success exit code check");
         assertEq(m_prefix + getTestValue("testTrue"), e.exe, "on_success exe check");
-        assertEq(0, e.error_code, "on_success error_code check");
-        assertEq(getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
-        assertEq("system", e.error_category, "on_success error_category check");
+        assertNothing(e.error_code, "on_success error_code check");
     }
 
     executorsRefsTest() {
@@ -530,8 +512,9 @@ public class Main inherits QUnit::Test {
             "path": (m_prefix,),
             "on_success": sub (int i) {},
         };
-        assertThrows("RUNTIME-TYPE-ERROR", "parameter 1 \\('i'\\) expects type 'int', but got type 'hash<auto>' "
-            "instead", sub () { Process p(getTestValue("testTrue"), opts); });
+        assertThrows("RUNTIME-OVERLOAD-ERROR", "no variant matching",
+            sub () { Process p(getTestValue("testTrue"), opts); }
+        );
     }
 
     threadTest() {
@@ -541,8 +524,15 @@ public class Main inherits QUnit::Test {
         assertEq(True, p.running(), "process must be running");
 
         Counter cnt(1);
-        background run_bg(cnt, p, self);
+        int tid = background run_bg(cnt, p, self);
         cnt.waitForZero();
+        # NOTE: for the test to work, the background thread must be waiting on the process before we kill it
+        while (True) {
+            if (get_all_thread_call_stacks(){tid}[0].function == "Process::wait") {
+                break;
+            }
+            usleep(10ms);
+        }
         p.terminate();
     }
 
@@ -672,10 +662,9 @@ public class Main inherits QUnit::Test {
             pid = p.id();
         }
 
-        {
+        assertThrows("PROCESS-CONSTRUCTOR-ERROR", sub () {
             Process p(pid);
-            assertFalse(p.running(), "Detached process is not running");
-        }
+        });
     }
 
     detachedProcessIOTest() {
@@ -832,21 +821,14 @@ sub run_bg(Counter cnt, Process p, Main m) {
     m.assertTrue(p.valid(), "process must be valid");
     m.assertTrue(p.running(), "process must be running");
 
-    try {
-        cnt.dec();
-        p.wait();
-    } catch (hash<ExceptionInfo> ex) {
-        m.assertEq("PROCESS-WAIT-ERROR", ex.err, "process is killed from main thread - err");
-        m.assertTrue(ex.desc.regex("No child processes"), ex.desc, "process is killed from main thread - desc");
-    }
+    cnt.dec();
+    p.wait();
+    m.assertFalse(p.running(), "process must not be running");
 }
 
 sub executor_func(hash<auto> e) {
     if (VERBOSE > 2) printf("executor_func: %y\n", e);
     MAIN.assertEq("on_success", e.name, "name check");
-    MAIN.assertEq(MAIN.getTestValue("executorsTest_exit_code_383"), e.exit, "on_success exit code check");
     MAIN.assertEq(MAIN.prefix() + MAIN.getTestValue("testTrue"), e.exe, "on_success exe check");
-    MAIN.assertEq(0, e.error_code, "on_success error_code check");
-    MAIN.assertEq(MAIN.getTestValue("executorsTest_success"), e.error_message, "on_success error_message check");
-    MAIN.assertEq("system", e.error_category, "on_success error_category check");
+    MAIN.assertNothing(e.error_code, "on_success error_code check");
 }

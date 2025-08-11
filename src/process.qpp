@@ -53,6 +53,10 @@ Version 1.0. (See http://www.boost.org/LICENSE_1_0.txt)
 
     @section process_relnotes Process Module Release History
 
+    @subsection process_v2_0 process v2.0
+    - updated to use Boost.Process v2.0
+    - removed the \c close_fds option; it's automatic with Boost.Process v2.0
+
     @subsection process_v1_1_0 process v1.1.0
     - added the \c close_fds option
 

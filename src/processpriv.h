@@ -35,6 +35,7 @@
 #include <string>
 #include <unistd.h>
 #include <vector>
+#include <unordered_map>
 
 // boost
 #include <boost/asio.hpp>
@@ -47,12 +48,12 @@
 #include <qore/OutputStream.h>
 #include <qore/InputStream.h>
 
-#include "qoreprocesshandler.h"
-
 DLLLOCAL extern qore_classid_t CID_PROCESS;
 DLLLOCAL extern QoreClass* QC_PROCESS;
 
-namespace bp = boost::process;
+namespace bp = boost::process::v2;
+
+typedef std::unordered_map<bp::environment::key, bp::environment::value> env_t;
 
 class ProcessPriv : public AbstractPrivateData {
 public:
@@ -121,7 +122,7 @@ protected:
 private:
     DLLLOCAL ResolvedCallReferenceNode* optsExecutor(const char* name, const QoreHashNode* opts, ExceptionSink* xsink);
 
-    DLLLOCAL bp::environment optsEnv(const QoreHashNode* opts, ExceptionSink* xsink);
+    DLLLOCAL env_t optsEnv(const QoreHashNode* opts, ExceptionSink* xsink);
     DLLLOCAL std::string optsCwd(const QoreHashNode* opts, ExceptionSink* xsink);
 
     DLLLOCAL void optsStdin(const QoreHashNode* opts, ExceptionSink* xsink);
@@ -142,14 +143,14 @@ private:
 
     DLLLOCAL void prepareClosures();
 
-    DLLLOCAL void launchChild(boost::filesystem::path p,
-                              std::vector<std::string>& args,
-                              bp::environment env,
-                              const char* cwd,
-                              FILE* stdoutFile,
-                              FILE* stderrFile,
-                              bool close_fds,
-                              ExceptionSink* xsink);
+    DLLLOCAL void launchChild(ExceptionSink* xsink,\
+            boost::filesystem::path p,
+            std::vector<std::string>& args,
+            env_t env,
+            const char* cwd,
+            FILE* stdoutFile,
+            FILE* stderrFile,
+            const QoreHashNode* opts);
 
     DLLLOCAL void finalizeStreams(ExceptionSink* xsink);
 
@@ -477,11 +478,10 @@ private:
         }
     };
 
-    //! async process shandler
-    QoreProcessHandler* handler = nullptr;
+    DLLLOCAL void setExitCode(boost::system::error_code ec, int e);
 
     //! Child process.
-    bp::child* m_process = nullptr;
+    bp::process* m_process = nullptr;
 
     //! Async context required for async IO.
     boost::asio::io_context m_asio_ctx;
@@ -490,13 +490,13 @@ private:
     std::future<void> m_asio_ctx_run_future;
 
     //! Pipe used for writing to child process's stdin.
-    bp::async_pipe m_in_pipe;
+    boost::asio::writable_pipe m_in_pipe;
 
     //! Pipe used for reading child process's stdout.
-    bp::async_pipe m_out_pipe;
+    boost::asio::readable_pipe m_out_pipe;
 
     //! Pipe used for reading child process's stderr.
-    bp::async_pipe m_err_pipe;
+    boost::asio::readable_pipe m_err_pipe;
 
     //! Mutex covering the @ref m_async_write_running variable.
     std::mutex m_async_write_mtx{};
@@ -551,11 +551,21 @@ private:
     //! Counter for stream assignments
     QoreCounter stream_cnt;
 
-    //! Exit code for program
+    // mutex for process status
+    std::mutex mtx_process_status;
+    // cond var for exit_code and running_flag
+    std::condition_variable cond_process_status;
+    // threads waiting on the process status
+    unsigned int process_status_waiting = 0;
+
+    //! Exit code for program; lock: m_mtx, cond: cond_process_status
     int exit_code = -1;
 
+    //! Running flag; lock: m_mtx, cond: cond_process_status
+    bool running_flag = false;
+
     //! Detached flag
-    bool detached = false;
+    int detached_pid = 0;
 };
 
 #endif

@@ -133,8 +133,7 @@ p.wait();
 
     The \c opts argument can take the following keys; all keys are optional:
     - \c env: replace current process's ENV with a hash of env variables.
-      Use @code ENV + ( "FOO" : "bar") @endcode is you want to merge parent's ENV to child.
-    - \c close_fds: close all file descriptors except \c stdin, \c stdout, and \c stderr in the child process
+      Use @code ENV + ( "FOO" : "bar") @endcode is you want to merge parent's ENV to child
     - \c cwd: a string with initial "current working directory",
       a dir which child should take as its initial work dir
     - \c path: a list of strings. It's a custom search path to find \c command

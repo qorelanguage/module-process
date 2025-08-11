@@ -5,32 +5,25 @@ project(qore-process-module)
 # internal copy of boost was prepared as seen in 3rd_party README file
 option(USE_INTERNAL_BOOST "Enforce using internal copy of boost libraries" OFF)
 
-set (VERSION_MAJOR 1)
+set (VERSION_MAJOR 2)
 set (VERSION_MINOR 0)
-set (VERSION_PATCH 5)
+set (VERSION_PATCH 0)
 
 # where to look first for cmake modules, before ${CMAKE_ROOT}/Modules/ is checked
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake )
 
-find_package(Qore 1.0 REQUIRED)
-#find_package(Threads REQUIRED)
-if (NOT USE_INTERNAL_BOOST)
-    find_package(Boost 1.71 COMPONENTS filesystem system)
-endif (NOT USE_INTERNAL_BOOST)
+find_package(Qore 2.0 REQUIRED)
 
-if (Boost_FOUND)
-    message(STATUS "Boost libs found: ${Boost_INCLUDE_DIRS} : ${Boost_LIBRARIES}")
-else (Boost_FOUND)
-    message(WARNING "Boost NOT found - using internal copy of boost libs")
-    set(BOOST_INTERNAL 1)
-endif (Boost_FOUND)
+set(BOOST_INCLUDE_LIBRARIES "filesystem;system;process")
+add_compile_options(-fPIC)
+add_subdirectory(3rd_party/boost)
 
 include(CheckCXXCompilerFlag)
-CHECK_CXX_COMPILER_FLAG("-std=c++11" COMPILER_SUPPORTS_CXX11)
-if(COMPILER_SUPPORTS_CXX11)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+CHECK_CXX_COMPILER_FLAG("-std=c++17" COMPILER_SUPPORTS_CXX17)
+if(COMPILER_SUPPORTS_CXX17)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
 else()
-    message(FATAL_ERROR "The compiler ${CMAKE_CXX_COMPILER} has no C++11 support. Please use a different C++ compiler.")
+    message(FATAL_ERROR "The compiler ${CMAKE_CXX_COMPILER} has no C++17 support; please use a different C++ compiler")
 endif()
 
 include(CheckCXXSymbolExists)
@@ -43,23 +36,9 @@ set(CPP_SRC
     src/processpriv.cpp
 )
 
-if (BOOST_INTERNAL)
-    set (CPP_SRC ${CPP_SRC}
-            3rd_party/libs/system/src/error_code.cpp
-            3rd_party/libs/filesystem/src/codecvt_error_category.cpp
-            3rd_party/libs/filesystem/src/operations.cpp
-            3rd_party/libs/filesystem/src/path.cpp
-            3rd_party/libs/filesystem/src/path_traits.cpp
-            3rd_party/libs/filesystem/src/portability.cpp
-            3rd_party/libs/filesystem/src/unique_path.cpp
-            3rd_party/libs/filesystem/src/utf8_codecvt_facet.cpp
-            3rd_party/libs/filesystem/src/windows_file_codecvt.cpp
-            3rd_party/libs/filesystem/src/windows_file_codecvt.hpp
-        )
-    include_directories( 3rd_party )
-else (BOOST_INTERNAL)
-    include_directories( ${Boost_INCLUDE_DIRS} )
-endif (BOOST_INTERNAL)
+#include_directories(
+#    ${CMAKE_SOURCE_DIR}/3rd_party/boost/libs/process/include/boost/process/v1
+#)
 
 set(QPP_SRC
     src/process.qpp
@@ -94,7 +73,12 @@ if (DEFINED ENV{DOXYGEN_EXECUTABLE})
     set(DOXYGEN_EXECUTABLE $ENV{DOXYGEN_EXECUTABLE})
 endif()
 
-qore_external_binary_module(${module_name} "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}" ${Boost_LIBRARIES} ${WIN_LIBS} ${SUNOS_LIBS})
+qore_external_binary_module(
+    ${module_name}
+    "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}"
+    ${Boost_LIBRARIES} ${WIN_LIBS} ${SUNOS_LIBS}
+)
+target_link_libraries(${module_name} PRIVATE Boost::process)
 
 qore_dist("${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}")
 

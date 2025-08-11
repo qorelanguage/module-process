@@ -32,7 +32,7 @@
 
 Summary: process module for Qore
 Name: qore-process-module
-Version: 1.1.0
+Version: 2.0.0
 Release: 1%{dist}
 License: LGPL-2.1-or-later
 Group: Development/Languages/Other
@@ -43,9 +43,9 @@ Requires: /usr/bin/env
 Requires: qore-module-api-%{module_api}
 BuildRequires: cmake >= 3.5
 BuildRequires: gcc-c++
-BuildRequires: qore-devel >= 1.12.4
-BuildRequires: qore-stdlib >= 1.12.4
-BuildRequires: qore >= 1.12.4
+BuildRequires: qore-devel >= 2.0
+BuildRequires: qore-stdlib >= 2.0
+BuildRequires: qore >= 2.0
 BuildRequires: openssl-devel
 BuildRequires: doxygen
 %if 0%{?el7}
@@ -100,6 +100,10 @@ process module.
 %doc docs/process test
 
 %changelog
+* Mon Aug 11 2025 David Nichols <david.nichols@qoretechnologies.com>
+- updated to use boost process 2.0
+- updated to version 2.0
+
 * Mon Dec 19 2022 David Nichols <david.nichols@qoretechnologies.com>
 - updated to version 1.0.5
 

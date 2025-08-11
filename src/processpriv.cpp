@@ -1,7 +1,7 @@
 /*
     Qore Programming Language process Module
 
-    Copyright (C) 2003 - 2022 Qore Technologies, s.r.o.
+    Copyright (C) 2003 - 2025 Qore Technologies, s.r.o.
 
     Permission is hereby granted, free of charge, to any person obtaining a
     copy of this software and associated documentation files (the "Software"),
@@ -35,11 +35,7 @@
 #include <boost/numeric/conversion/cast.hpp>
 
 // module
-#include "qoreprocesshandler.h"
 #include "unix-config.h"
-
-namespace bp = boost::process;
-namespace ex = boost::process::extend;
 
 DLLLOCAL extern const TypedHashDecl* hashdeclMemorySummaryInfo;
 
@@ -59,8 +55,8 @@ ProcessPriv::ProcessPriv(pid_t pid, ExceptionSink* xsink) :
         m_out_asiobuf(boost::asio::buffer(m_out_vec)),
         m_err_asiobuf(boost::asio::buffer(m_err_vec)) {
     try {
-        int i = boost::numeric_cast<int>(pid);
-        m_process = new bp::child(i);
+        //printd(5, "ProcessPriv::ProcessPriv(pid: %d)\n", pid);
+        m_process = new bp::process(m_asio_ctx.get_executor(), (boost::process::v2::pid_type)pid);
     } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-CONSTRUCTOR-ERROR", ex.what());
     }
@@ -68,6 +64,97 @@ ProcessPriv::ProcessPriv(pid_t pid, ExceptionSink* xsink) :
 
 // default I/O buffer size
 static constexpr unsigned process_buf_size = 4096;
+
+struct callback_initializer {
+    ResolvedCallReferenceNode* f_on_success;
+    ResolvedCallReferenceNode* f_on_setup;
+    ResolvedCallReferenceNode* f_on_error;
+    ResolvedCallReferenceNode* f_on_fork_error;
+    ResolvedCallReferenceNode* f_on_exec_setup;
+    ResolvedCallReferenceNode* f_on_exec_error;
+    ExceptionSink* xsink;
+
+    template<typename Launcher = bp::posix::default_launcher>
+    DLLLOCAL void on_success(Launcher& launcher, const bp::filesystem::path& executable,
+            const char* const* (&cmd_line)) {
+        call("on_success", launcher, executable, f_on_success);
+    }
+
+    template<typename Launcher = bp::posix::default_launcher>
+    DLLLOCAL bp::error_code on_setup(Launcher& launcher, const bp::filesystem::path& executable,
+            const char* const* (&cmd_line)) {
+        call("on_setup", launcher, executable, f_on_setup);
+        return bp::error_code();
+    }
+
+    template<typename Launcher = bp::posix::default_launcher>
+    DLLLOCAL void on_error(Launcher& launcher, const bp::filesystem::path& executable,
+            const char* const* (&cmd_line), const bp::error_code& ec) {
+        call("on_error", launcher, executable, f_on_error, ec);
+    }
+
+    template<typename Launcher = bp::posix::default_launcher>
+    DLLLOCAL void on_fork_error(Launcher& launcher, const bp::filesystem::path& executable,
+            const char* const* (&cmd_line), const bp::error_code& ec) {
+        call("on_fork_error", launcher, executable, f_on_fork_error, ec);
+    }
+
+    template<typename Launcher = bp::posix::default_launcher>
+    DLLLOCAL bp::error_code on_exec_setup(Launcher& launcher, const bp::filesystem::path& executable,
+            const char* const* (&cmd_line)) {
+        call("on_exec_setup", launcher, executable, f_on_exec_setup);
+        return bp::error_code();
+    }
+
+    template<typename Launcher = bp::posix::default_launcher>
+    DLLLOCAL void on_exec_error(Launcher& launcher, const bp::filesystem::path& executable,
+            const char* const* (&cmd_line)) {
+        call("on_exec_error", launcher, executable, f_on_exec_error);
+    }
+
+private:
+    template<typename Launcher = bp::posix::default_launcher>
+    DLLLOCAL void call(const char* type, Launcher& launcher, const bp::filesystem::path& executable,
+            const ResolvedCallReferenceNode* callref,
+            const bp::error_code& ec) const {
+        if (!callref) {
+            //printd(5, "no handler installed for '%s'\n", executable.c_str());
+            return;
+        }
+
+        ReferenceHolder<QoreHashNode> report(new QoreHashNode(autoTypeInfo), xsink);
+        report->setKeyValue("name", new QoreStringNode(type), xsink);
+        report->setKeyValue("exe", new QoreStringNode(executable.c_str()), xsink);
+        report->setKeyValue("pid", launcher.pid, xsink);
+
+        // error_code to hash too
+        report->setKeyValue("error_code", ec.value(), xsink);
+        report->setKeyValue("error_message", new QoreStringNode(ec.message()), xsink);
+        report->setKeyValue("error_category", new QoreStringNode(ec.category().name()), xsink);
+
+        ReferenceHolder<QoreListNode> args(new QoreListNode(autoTypeInfo), xsink);
+        args->push(report.release(), xsink);
+        callref->execValue(*args, xsink);
+    }
+
+    template<typename Launcher = bp::posix::default_launcher>
+    DLLLOCAL void call(const char* type, Launcher& launcher, const bp::filesystem::path& executable,
+            const ResolvedCallReferenceNode* callref) const {
+        if (!callref) {
+            //printd(5, "no handler installed for '%s'\n", executable.c_str());
+            return;
+        }
+
+        ReferenceHolder<QoreHashNode> report(new QoreHashNode(autoTypeInfo), xsink);
+        report->setKeyValue("name", new QoreStringNode(type), xsink);
+        report->setKeyValue("exe", new QoreStringNode(executable.c_str()), xsink);
+        report->setKeyValue("pid", launcher.pid, xsink);
+
+        ReferenceHolder<QoreListNode> args(new QoreListNode(autoTypeInfo), xsink);
+        args->push(report.release(), xsink);
+        callref->execValue(*args, xsink);
+    }
+};
 
 ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, const QoreHashNode *opts,
         ExceptionSink* xsink) :
@@ -86,16 +173,8 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
         m_in_asiobuf(boost::asio::buffer(m_in_vec)),
         m_out_asiobuf(boost::asio::buffer(m_out_vec)),
         m_err_asiobuf(boost::asio::buffer(m_err_vec)) {
-    // get handler pointers
-    ResolvedCallReferenceNode* on_success = optsExecutor("on_success", opts, xsink);
-    ResolvedCallReferenceNode* on_setup = optsExecutor("on_setup", opts, xsink);
-    ResolvedCallReferenceNode* on_error = optsExecutor("on_error", opts, xsink);
-    ResolvedCallReferenceNode* on_fork_error = optsExecutor("on_fork_error", opts, xsink);
-    ResolvedCallReferenceNode* on_exec_setup = optsExecutor("on_exec_setup", opts, xsink);
-    ResolvedCallReferenceNode* on_exec_error = optsExecutor("on_exec_error", opts, xsink);
-
     // parse options
-    bp::environment env = optsEnv(opts, xsink);
+    env_t env = optsEnv(opts, xsink);
     boost::filesystem::path p = optsPath(command, opts, xsink);
     std::string cwd = optsCwd(opts, xsink);
 
@@ -106,14 +185,12 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
     if (opts && opts->existsKey("encoding")) {
         QoreValue n = opts->getKeyValue("encoding");
         if (n.getType() != NT_STRING) {
-            xsink->raiseException("PROCESS-OPTION-ERROR", "Process option 'encoding' requires a 'string' argument; " \
+            xsink->raiseException("PROCESS-OPTION-ERROR", "Process option 'encoding' requires a 'string' argument; "
                 "type '%s' instead", n.getTypeName());
             return;
         }
         enc = QEM.findCreate(n.get<const QoreStringNode>()->c_str());
     }
-
-    bool close_fds = opts && opts->existsKey("close_fds") && opts->getKeyValue("close_fds").getAsBool();
 
     // not yet supported; not possible to read from an input stream with a timeout or to read all data available
     //optsStdin(opts, xsink);
@@ -142,16 +219,7 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
 
     // launch child process
     try {
-        handler = new QoreProcessHandler(xsink,
-            on_success,
-            on_setup,
-            on_error,
-            on_fork_error,
-            on_exec_setup,
-            on_exec_error,
-            exit_code);
-
-        launchChild(p, exeArgs, env, cwd.c_str(), stdoutFile, stderrFile, close_fds, xsink);
+        launchChild(xsink, p, exeArgs, env, cwd.c_str(), stdoutFile, stderrFile, opts);
     } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-CONSTRUCTOR-ERROR", ex.what());
     }
@@ -163,9 +231,6 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
 }
 
 ProcessPriv::~ProcessPriv() {
-    if (handler) {
-        delete handler;
-    }
     // in case the object is obliterated (exception in constructor), the destructor is not run
     delete m_process;
     assert(!bg_xsink);
@@ -192,10 +257,10 @@ ResolvedCallReferenceNode* ProcessPriv::optsExecutor(const char* name, const Qor
             QoreValue n = oh->getKeyValue(name);
             if (n.getType() != NT_RUNTIME_CLOSURE && n.getType() != NT_FUNCREF) {
                 xsink->raiseException("PROCESS-OPTION-ERROR",
-                                      "executor '%s' required code as value, got: '%s'(%d)",
-                                      name,
-                                      n.getTypeName(),
-                                      n.getType()
+                    "executor '%s' required code as value, got: '%s'(%d)",
+                    name,
+                    n.getTypeName(),
+                    n.getType()
                 );
                 return ret;
             }
@@ -208,19 +273,19 @@ ResolvedCallReferenceNode* ProcessPriv::optsExecutor(const char* name, const Qor
     return ret;
 }
 
-bp::environment ProcessPriv::optsEnv(const QoreHashNode* opts, ExceptionSink* xsink) {
+env_t ProcessPriv::optsEnv(const QoreHashNode* opts, ExceptionSink* xsink) {
     // As agreed - we are not merging current process env. We are replacing.
     // The "merge" can be done with global ENV hash.
-    // bp::environment ret = boost::this_process::environment();
-    bp::environment ret;
+    // bp::process_environment ret = bp::environment::current();
+    env_t ret;
 
     if (opts && opts->existsKey("env")) {
         QoreValue n = opts->getKeyValue("env");
         if (n.getType() != NT_HASH) {
             xsink->raiseException("PROCESS-OPTION-ERROR",
-                                  "Environment variables option must be a hash, got: '%s'(%d)",
-                                  n.getTypeName(),
-                                  n.getType()
+                "Environment variables option must be a hash, got: '%s'(%d)",
+                n.getTypeName(),
+                n.getType()
             );
             return ret;
         }
@@ -228,13 +293,17 @@ bp::environment ProcessPriv::optsEnv(const QoreHashNode* opts, ExceptionSink* xs
         ConstHashIterator it(n.get<const QoreHashNode>());
         while (it.next()) {
             QoreStringValueHelper val(it.get());
-            ret[it.getKey()] = val->c_str();
+            ret[it.getKey()] = bp::environment::value(val->c_str());
         }
 
         return ret;
-    } else {
-        return boost::this_process::environment();
     }
+
+    for (const auto& i : bp::environment::current()) {
+        // copy the environment variables from the current process
+        ret[i.key()] = i.value();
+    }
+    return ret;
 }
 
 std::string ProcessPriv::optsCwd(const QoreHashNode* opts, ExceptionSink* xsink) {
@@ -244,9 +313,9 @@ std::string ProcessPriv::optsCwd(const QoreHashNode* opts, ExceptionSink* xsink)
         QoreValue n = opts->getKeyValue("cwd");
         if (n.getType() != NT_STRING) {
             xsink->raiseException("PROCESS-OPTION-ERROR",
-                                  "Working dir 'cwd' option must be a string, got: '%s'(%d)",
-                                  n.getTypeName(),
-                                  n.getType()
+                "Working dir 'cwd' option must be a string, got: '%s'(%d)",
+                n.getTypeName(),
+                n.getType()
             );
             return ret;
         }
@@ -264,9 +333,9 @@ void ProcessPriv::optsStdin(const QoreHashNode* opts, ExceptionSink* xsink) {
     QoreValue n = opts->getKeyValue("stdin");
     if (n.getType() != NT_OBJECT) {
         xsink->raiseException("PROCESS-OPTION-ERROR",
-                                "Process constructor option 'stdin' must be an " \
-                                "InputStream object; got type '%s' instead",
-                                n.getTypeName()
+            "Process constructor option 'stdin' must be an "
+            "InputStream object; got type '%s' instead",
+            n.getTypeName()
         );
         return;
     }
@@ -278,7 +347,7 @@ void ProcessPriv::optsStdin(const QoreHashNode* opts, ExceptionSink* xsink) {
     ClassAccess access;
     bool in_hierarchy = obj->getClass()->inHierarchy(*QC_INPUTSTREAM, access);
     if (!in_hierarchy || access != Public) {
-        xsink->raiseException("PROCESS-OPTION-ERROR", "Process constructor option 'stdin' expecting an object " \
+        xsink->raiseException("PROCESS-OPTION-ERROR", "Process constructor option 'stdin' expecting an object "
             "of class 'OutputStream'; got an object of class '%s' instead",
             obj->getClassName());
         return;
@@ -287,7 +356,7 @@ void ProcessPriv::optsStdin(const QoreHashNode* opts, ExceptionSink* xsink) {
     PrivateDataRefHolder<InputStream> stream(obj, CID_INPUTSTREAM, xsink);
     if (*xsink) {
         // an exception has already been thrown here
-        xsink->appendLastDescription(" (while processing Process constructor option 'stdin' expecting " \
+        xsink->appendLastDescription(" (while processing Process constructor option 'stdin' expecting "
             "a valid Inputstream object)");
         return;
     }
@@ -302,10 +371,10 @@ int ProcessPriv::optsStdout(const char* keyName, const QoreHashNode* opts, Excep
         QoreValue n = opts->getKeyValue(keyName);
         if (n.getType() != NT_OBJECT) {
             xsink->raiseException("PROCESS-OPTION-ERROR",
-                                  "Process constructor option '%s' must be a File object (open for writing) or an " \
-                                  "OutputStream object; got type '%s' instead",
-                                  keyName,
-                                  n.getTypeName()
+                "Process constructor option '%s' must be a File object (open for writing) or an "
+                "OutputStream object; got type '%s' instead",
+                keyName,
+                n.getTypeName()
             );
             return -1;
         }
@@ -323,7 +392,7 @@ int ProcessPriv::optsStdout(const char* keyName, const QoreHashNode* opts, Excep
                     PrivateDataRefHolder<OutputStream> stream(obj, CID_OUTPUTSTREAM, xsink);
                     if (*xsink) {
                         // an exception has already been thrown here
-                        xsink->appendLastDescription(" (while processing Process constructor option '%s' expecting " \
+                        xsink->appendLastDescription(" (while processing Process constructor option '%s' expecting "
                             "a valid OutputStream object)", keyName);
                         return -1;
                     }
@@ -335,7 +404,7 @@ int ProcessPriv::optsStdout(const char* keyName, const QoreHashNode* opts, Excep
                     }
                     return -1;
                 } else {
-                    xsink->raiseException("PROCESS-OPTION-ERROR", "Process constructor option '%s' expecting an object " \
+                    xsink->raiseException("PROCESS-OPTION-ERROR", "Process constructor option '%s' expecting an object "
                         "of class 'File' or 'OutputStream'; got an object of class '%s' instead",
                         keyName,
                         obj->getClassName());
@@ -347,16 +416,16 @@ int ProcessPriv::optsStdout(const char* keyName, const QoreHashNode* opts, Excep
         PrivateDataRefHolder<File> file(obj, CID_FILE, xsink);
         if (*xsink) {
             // an exception has already been thrown here
-            xsink->appendLastDescription(" (while processing Process constructor option '%s' expecting a valid File " \
+            xsink->appendLastDescription(" (while processing Process constructor option '%s' expecting a valid File "
                 "object open for writing)", keyName);
             return -1;
         }
 
         if (!file->isOpen()) {
             xsink->raiseException("PROCESS-OPTION-ERROR",
-                                  "Process constructor option '%s' must be an open File object; the File object " \
-                                  "passed is not open for writing",
-                                  keyName
+                "Process constructor option '%s' must be an open File object; the File object "
+                "passed is not open for writing",
+                keyName
             );
             return -1;
         }
@@ -374,25 +443,31 @@ boost::filesystem::path ProcessPriv::optsPath(const char* command, const QoreHas
             QoreValue n = opts->getKeyValue("path");
             if (n.getType() != NT_LIST) {
                 xsink->raiseException("PROCESS-OPTION-ERROR",
-                                      "Path option must be a list of strings, got: '%s'(%d)",
-                                      n.getTypeName(),
-                                      n.getType()
+                    "Path option must be a list of strings, got: '%s'(%d)",
+                    n.getTypeName(),
+                    n.getType()
                 );
                 return ret;
             }
 
             const QoreListNode* l = n.get<const QoreListNode>();
-            std::vector<boost::filesystem::path> paths;
+            std::string paths;
 
             for (qore_size_t i = 0; i < l->size(); i++) {
                 QoreStringValueHelper s(l->retrieveEntry(i));
-                paths.push_back(boost::filesystem::path(s->c_str()));
+                if (i) {
+                    paths.append(":");
+                }
+                paths.append(s->c_str());
             }
 
-            ret = bp::search_path(command, paths);
-        }
-        else {
-            ret = bp::search_path(command);
+            std::unordered_map<bp::environment::key, bp::environment::value> my_env = {
+                {"PATH", bp::environment::value(paths)},
+            };
+
+            ret = bp::environment::find_executable(command, my_env);
+        } else {
+            ret = bp::environment::find_executable(command);
         }
     } catch (std::runtime_error& ex) {
         xsink->raiseException("PROCESS-SEARCH-PATH-ERROR", ex.what());
@@ -530,6 +605,7 @@ void ProcessPriv::prepareClosures() {
     };
 }
 
+/*
 struct PreservedFds : boost::process::detail::handler, boost::process::detail::uses_handles {
     std::vector<int> fds;
     PreservedFds() : fds({0, 1, 2}) {
@@ -539,115 +615,90 @@ struct PreservedFds : boost::process::detail::handler, boost::process::detail::u
         return fds;
     }
 };
+*/
 
-void ProcessPriv::launchChild(boost::filesystem::path p,
+void ProcessPriv::launchChild(ExceptionSink* xsink,
+        boost::filesystem::path p,
         std::vector<std::string>& args,
-        bp::environment env,
+        env_t env,
         const char* cwd,
         FILE* stdoutFile,
         FILE* stderrFile,
-        bool close_fds,
-        ExceptionSink* xsink) {
+        const QoreHashNode* opts) {
+    // get handler pointers
+    ReferenceHolder<ResolvedCallReferenceNode> f_on_success(optsExecutor("on_success", opts, xsink), xsink);
+    if (*xsink) {
+        return;
+    }
+    ReferenceHolder<ResolvedCallReferenceNode> f_on_setup(optsExecutor("on_setup", opts, xsink), xsink);
+    if (*xsink) {
+        return;
+    }
+    ReferenceHolder<ResolvedCallReferenceNode> f_on_error(optsExecutor("on_error", opts, xsink), xsink);
+    if (*xsink) {
+        return;
+    }
+    ReferenceHolder<ResolvedCallReferenceNode> f_on_fork_error(optsExecutor("on_fork_error", opts, xsink), xsink);
+    if (*xsink) {
+        return;
+    }
+    ReferenceHolder<ResolvedCallReferenceNode> f_on_exec_setup(optsExecutor("on_exec_setup", opts, xsink), xsink);
+    if (*xsink) {
+        return;
+    }
+    ReferenceHolder<ResolvedCallReferenceNode> f_on_exec_error(optsExecutor("on_exec_error", opts, xsink), xsink);
+    if (*xsink) {
+        return;
+    }
+
+    callback_initializer cbi{
+        *f_on_success,
+        *f_on_setup,
+        *f_on_error,
+        *f_on_fork_error,
+        *f_on_exec_setup,
+        *f_on_exec_error,
+        xsink
+    };
+
+    bp::process_environment penv = bp::process_environment(env);
+
     if (stdoutFile && stderrFile) {
-        if (close_fds) {
-            PreservedFds pfds;
-            m_process = new bp::child(bp::exe = p.string(),
-                bp::args = args,
-                bp::env = env,
-                bp::start_dir = cwd,
-                *handler,
-                bp::std_out > stdoutFile,
-                bp::std_err > stderrFile,
-                bp::std_in < m_in_pipe,
-                m_asio_ctx,
-                pfds,
-                boost::process::limit_handles);
-        } else {
-            m_process = new bp::child(bp::exe = p.string(),
-                bp::args = args,
-                bp::env = env,
-                bp::start_dir = cwd,
-                *handler,
-                bp::std_out > stdoutFile,
-                bp::std_err > stderrFile,
-                bp::std_in < m_in_pipe,
-                m_asio_ctx);
-        }
+        m_process = new bp::process(m_asio_ctx, p.string(), args, cbi,
+            bp::process_stdio{m_in_pipe, stdoutFile, stderrFile},
+            bp::process_start_dir(cwd),
+            penv
+        );
     } else if (stdoutFile) {
-        if (close_fds) {
-            PreservedFds pfds;
-            m_process = new bp::child(bp::exe = p.string(),
-                bp::args = args,
-                bp::env = env,
-                bp::start_dir = cwd,
-                *handler,
-                bp::std_out > stdoutFile,
-                bp::std_err > m_err_pipe,
-                bp::std_in < m_in_pipe,
-                m_asio_ctx,
-                pfds,
-                boost::process::limit_handles);
-        } else {
-            m_process = new bp::child(bp::exe = p.string(),
-                bp::args = args,
-                bp::env = env,
-                bp::start_dir = cwd,
-                *handler,
-                bp::std_out > stdoutFile,
-                bp::std_err > m_err_pipe,
-                bp::std_in < m_in_pipe,
-                m_asio_ctx);
-        }
+        m_process = new bp::process(m_asio_ctx, p.string(), args, cbi,
+            bp::process_stdio{m_in_pipe, stdoutFile, m_err_pipe},
+            bp::process_start_dir(cwd),
+            penv
+        );
     } else if (stderrFile) {
-        if (close_fds) {
-            PreservedFds pfds;
-            m_process = new bp::child(bp::exe = p.string(),
-                bp::args = args,
-                bp::env = env,
-                bp::start_dir = cwd,
-                *handler,
-                bp::std_out > m_out_pipe,
-                bp::std_err > stderrFile,
-                bp::std_in < m_in_pipe,
-                m_asio_ctx,
-                pfds,
-                boost::process::limit_handles);
-        } else {
-            m_process = new bp::child(bp::exe = p.string(),
-                bp::args = args,
-                bp::env = env,
-                bp::start_dir = cwd,
-                *handler,
-                bp::std_out > m_out_pipe,
-                bp::std_err > stderrFile,
-                bp::std_in < m_in_pipe,
-                m_asio_ctx);
-        }
+        m_process = new bp::process(m_asio_ctx, p.string(), args, cbi,
+            bp::process_stdio{m_in_pipe, m_out_pipe, stderrFile},
+            bp::process_start_dir(cwd),
+            penv
+        );
     } else {
-        if (close_fds) {
-            PreservedFds pfds;
-            m_process = new bp::child(bp::exe = p.string(),
-                bp::args = args,
-                bp::env = env,
-                bp::start_dir = cwd,
-                *handler,
-                bp::std_out > m_out_pipe,
-                bp::std_err > m_err_pipe,
-                bp::std_in < m_in_pipe,
-                m_asio_ctx,
-                pfds,
-                boost::process::limit_handles);
-        } else {
-            m_process = new bp::child(bp::exe = p.string(),
-                bp::args = args,
-                bp::env = env,
-                bp::start_dir = cwd,
-                *handler,
-                bp::std_out > m_out_pipe,
-                bp::std_err > m_err_pipe,
-                bp::std_in < m_in_pipe,
-                m_asio_ctx);
+        m_process = new bp::process(m_asio_ctx, p.string(), args, cbi,
+            bp::process_stdio{m_in_pipe, m_out_pipe, m_err_pipe},
+            bp::process_start_dir(cwd),
+            penv
+        );
+    }
+
+    m_process->async_wait(
+        [this](boost::system::error_code ec, int e) {
+            this->setExitCode(ec, e);
         }
+    );
+
+    {
+        std::unique_lock<std::mutex> lock(mtx_process_status);
+        assert(!running_flag);
+        running_flag = true;
     }
 
     // create async read operations
@@ -697,6 +748,23 @@ void ProcessPriv::launchChild(boost::filesystem::path p,
     started.waitForZero(nullptr);
 }
 
+void ProcessPriv::setExitCode(boost::system::error_code ec, int e) {
+#if 0
+    if (ec) {
+        printd(0, "process::async_wait() failed: %s\n", ec.message().c_str());
+    }
+#endif
+    std::unique_lock<std::mutex> lock(mtx_process_status);
+    assert(running_flag);
+    running_flag = false;
+    if (!ec) {
+        exit_code = bp::evaluate_exit_code(e);
+    }
+    if (process_status_waiting) {
+        cond_process_status.notify_all();
+    }
+}
+
 int ProcessPriv::exitCode(ExceptionSink* xsink) {
     if (!processCheck(xsink)) {
         return -1;
@@ -724,31 +792,31 @@ bool ProcessPriv::valid(ExceptionSink* xsink) {
         return false;
     }
 
-    try {
-        return m_process->valid();
-    } catch (const std::exception& ex) {
-        xsink->raiseException("PROCESS-VALID-ERROR", ex.what());
-    }
-
-    return false;
+    return m_process->is_open();
 }
 
 bool ProcessPriv::running(ExceptionSink* xsink) {
     if (!processCheck(xsink)) {
+        printd(0, "ProcessPriv::running() processCheck() failed\n");
         return false;
     }
-
-    std::error_code ec;
-    bool rc = m_process->running(ec);
-    if (ec) {
-        xsink->raiseException("PROCESS-RUNNING-ERROR", "Process::running() failed: %s", ec.message().c_str());
+    if (detached_pid) {
+        return checkPid(detached_pid, xsink);
     }
+
+    boost::system::error_code ec;
+    bool rc = m_process->running(ec);
+#if 0
+    if (ec) {
+        printd(0, "ProcessPriv::running() failed: %s (rc: %d)\n", ec.message().c_str(), rc);
+    }
+#endif
     return rc;
 }
 
 void ProcessPriv::finalizeStreams(ExceptionSink* xsink) {
     // the asio context is stopped in the process handler unless the process has been detached
-    if (detached) {
+    if (detached_pid) {
         m_asio_ctx.stop();
         try {
             m_asio_ctx.run();
@@ -831,22 +899,20 @@ bool ProcessPriv::wait(ExceptionSink* xsink) {
     //printd(5, "ProcessPriv::wait() valid: %d exit_code: %d\n", m_process->valid(), exit_code);
 
     try {
-        if (m_process->valid()) {
-            std::error_code ec;
-            m_process->wait(ec);
-            if (ec && ec != std::errc::no_child_process) {
-                xsink->raiseException("PROCESS-WAIT-ERROR", "cannot wait on process: %s", ec.message().c_str());
-                return false;
-            }
-
-            if (exit_code == -1) {
-                // get exit code if possible
-                getExitCode(xsink);
-            }
-
-            // rethrows any background exceptions
-            finalizeStreams(xsink);
+        boost::system::error_code ec;
+        m_process->wait(ec);
+        if (ec && ec != std::errc::no_child_process) {
+            xsink->raiseException("PROCESS-WAIT-ERROR", "cannot wait on process: %s", ec.message().c_str());
+            return false;
         }
+
+        if (exit_code == -1) {
+            // get exit code if possible
+            getExitCode(xsink);
+        }
+
+        // rethrows any background exceptions
+        finalizeStreams(xsink);
         return true;
     } catch (const std::exception& ex) {
         const char* err = ex.what();
@@ -867,26 +933,39 @@ bool ProcessPriv::wait(int64 t, ExceptionSink* xsink) {
     }
 
     try {
-        if (m_process->valid()) {
-            std::error_code ec;
-            bool rv = m_process->wait_for(std::chrono::milliseconds(t), ec);
-            if (ec && ec != std::errc::no_child_process) {
-                xsink->raiseException("PROCESS-WAIT-ERROR", "cannot wait on process: %s", ec.message().c_str());
-                return false;
+        std::unique_lock<std::mutex> lock(mtx_process_status);
+        if (running_flag) {
+            // wait for the process to finish
+            ++process_status_waiting;
+            cond_process_status.wait_for(lock, std::chrono::milliseconds(t));
+            --process_status_waiting;
+        }
+        if (running_flag) {
+            return false;
+        }
+        // rethrows any background exceptions
+        finalizeStreams(xsink);
+        return true;
+        /*
+        boost::system::error_code ec;
+        bool rv = m_process->wait_for(std::chrono::milliseconds(t), ec);
+        if (ec && ec != std::errc::no_child_process) {
+            xsink->raiseException("PROCESS-WAIT-ERROR", "cannot wait on process: %s", ec.message().c_str());
+            return false;
+        }
+        if (rv) {
+            if (exit_code == -1) {
+                // get exit code if possible
+                getExitCode(xsink);
             }
-            if (rv) {
-                if (exit_code == -1) {
-                    // get exit code if possible
-                    getExitCode(xsink);
-                }
 
-                // rethrows any background exceptions
-                finalizeStreams(xsink);
+            // rethrows any background exceptions
+            finalizeStreams(xsink);
 
-                return true;
-            }
+            return true;
         }
         return false;
+        */
     } catch (const std::exception& ex) {
         const char* err = ex.what();
         xsink->raiseException("PROCESS-WAIT-ERROR", err);
@@ -901,13 +980,14 @@ bool ProcessPriv::detach(ExceptionSink* xsink) {
     }
 
     try {
+        detached_pid = m_process->id();
         m_process->detach();
     } catch (const std::exception& ex) {
         const char* err = ex.what();
         xsink->raiseException("PROCESS-WAIT-ERROR", err);
+        detached_pid = 0;
         return false;
     }
-    detached = true;
     return true;
 }
 
@@ -916,7 +996,7 @@ bool ProcessPriv::terminate(ExceptionSink* xsink) {
         return false;
     }
 
-    std::error_code ec;
+    boost::system::error_code ec;
     m_process->terminate(ec);
     if (ec) {
         xsink->raiseException("PROCESS-TERMINATE-ERROR", "cannot terminate process: %s", ec.message().c_str());

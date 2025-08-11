@@ -1,11 +1,3 @@
-this is an internal copy of boost 1.71 (required modules)
-It's used only when there is no system-wide boost available
+this module includes an internal copy of the Boost C++ libraries
 
-How to build it:
-- download latest boost tarball, unpack it
-- ./bootstrap.sh
-- ./b2 tools/bcp
-- ./dist/bin/bcp process ../tmp
-- copy content of tmp here
-
-NOTE: boost 1.72+ requires a build change as boost.filesystem has a library that must be built for each platform
+it is built when the module is built
