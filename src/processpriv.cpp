@@ -801,20 +801,22 @@ bool ProcessPriv::valid(ExceptionSink* xsink) {
 
 bool ProcessPriv::running(ExceptionSink* xsink) {
     if (!processCheck(xsink)) {
-        printd(0, "ProcessPriv::running() processCheck() failed\n");
+        //printd(5, "ProcessPriv::running() processCheck() failed\n");
         return false;
     }
     if (detached_pid) {
+        //printd(5, "ProcessPriv::running() detached PID %d; checking manually\n", detached_pid);
         return checkPid(detached_pid, xsink);
     }
 
     boost::system::error_code ec;
     bool rc = m_process->running(ec);
-#if 0
-    if (ec) {
-        printd(0, "ProcessPriv::running() failed: %s (rc: %d)\n", ec.message().c_str(), rc);
+    // ECHILD is raised with processes created from a PID, so we check it manually
+    if (!rc && (ec == std::errc::no_child_process)) {
+        //printd(5, "ProcessPriv::running() ECHILD; checking manually\n");
+        return checkPid(m_process->id(), xsink);
     }
-#endif
+    //printd(5, "ProcessPriv::running() returning %s\n", rc ? "true" : "false");
     return rc;
 }
 
@@ -1017,15 +1019,28 @@ bool ProcessPriv::terminate(ExceptionSink* xsink) {
         return false;
     }
 
+    if (detached_pid) {
+        if (kill(detached_pid, SIGKILL) == -1) {
+            xsink->raiseException("PROCESS-TERMINATE-ERROR", "Cannot terminate process: %s",
+                strerror(errno));
+            return false;
+        }
+        return true;
+    }
+
     boost::system::error_code ec;
     m_process->terminate(ec);
+
+    //printd(5, "ProcessPriv::terminate() ec: %d (%s): %s\n", ec.value(), ec.category().name(),
+    //    ec.message().c_str());
+
     if (ec) {
-        {
+        // ECHILD is raised with the wait() call after the process has been terminated
+        if (ec.value() == ECHILD) {
             std::lock_guard<std::mutex> lock(mtx_process_status);
-            // if we waited in another thread for the exit code, then we should ignore the ECHILD error here
-            if (ec.value() == ECHILD && (exit_code != -1)) {
-                return true;
+            if (exit_code == -1) {
             }
+            return true;
         }
         xsink->raiseException("PROCESS-TERMINATE-ERROR", "Cannot terminate process: (%d: %s) %s",
             ec.value(), ec.category().name(), ec.message().c_str());
