@@ -804,9 +804,32 @@ bool ProcessPriv::running(ExceptionSink* xsink) {
         //printd(5, "ProcessPriv::running() processCheck() failed\n");
         return false;
     }
+
+    std::lock_guard<std::mutex> lock(mtx_process_status);
+    if (exit_code != -1) {
+        return false;
+    }
+
     if (detached_pid) {
-        //printd(5, "ProcessPriv::running() detached PID %d; checking manually\n", detached_pid);
-        return checkPid(detached_pid, xsink);
+        int code = 0;
+        int res = ::waitpid(detached_pid, &code, WNOHANG);
+        //printd(5, "ProcessPriv::running() detached PID %d; waitpid() result: %d code: %d exited: %d signaled: %d\n",
+        //    detached_pid, res, code, (int)WIFEXITED(code), (int)WIFSIGNALED(code));
+        if (res == -1) {
+            xsink->raiseException("PROCESS-RUNNING-ERROR", "Cannot check detached process with PID %d: %s",
+                detached_pid, strerror(errno));
+            return false;
+        } else if (!res) {
+            return true;
+        }
+
+        if (!WIFEXITED(code) && !WIFSIGNALED(code)) {
+            return true;
+        }
+        //printd(5, "ProcessPriv::running() detached PID %d is not running; exit code: %d\n", detached_pid, code);
+        exit_code = WEXITSTATUS(code);
+
+        return false;
     }
 
     boost::system::error_code ec;

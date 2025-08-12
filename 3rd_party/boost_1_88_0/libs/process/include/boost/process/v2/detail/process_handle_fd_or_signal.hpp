@@ -41,7 +41,7 @@ template<typename Executor = net::any_io_executor>
 struct basic_process_handle_fd_or_signal
 {
     using native_handle_type = int;
-    
+
     typedef Executor executor_type;
 
     executor_type get_executor()
@@ -75,7 +75,7 @@ struct basic_process_handle_fd_or_signal
             : pid_(pid), descriptor_(context)
     {
     }
-    
+
     template<typename ExecutionContext>
     basic_process_handle_fd_or_signal(ExecutionContext &context,
                                       pid_type pid, native_handle_type process_handle,
@@ -86,7 +86,7 @@ struct basic_process_handle_fd_or_signal
             : pid_(pid), descriptor_(context, process_handle)
     {
     }
-    
+
 
     basic_process_handle_fd_or_signal(Executor executor)
             : pid_(-1), descriptor_(executor)
@@ -162,9 +162,9 @@ struct basic_process_handle_fd_or_signal
             {
                 ec = get_last_error();
                 break;
-            }               
+            }
         }
-            
+
     }
 
     void wait(native_exit_code_type &exit_status)
@@ -212,7 +212,7 @@ struct basic_process_handle_fd_or_signal
         if (ec)
             detail::throw_error(ec, "request_exit");
     }
-    
+
     void suspend()
     {
         if (pid_ <= 0)
@@ -280,7 +280,7 @@ struct basic_process_handle_fd_or_signal
         else
             ec.clear();
 
-        if (process_is_running(res))
+        if (process_is_running(code))
             return true;
         else
             exit_code = code;
@@ -334,7 +334,7 @@ struct basic_process_handle_fd_or_signal
             int wait_res = -1;
             if (pid_ <= 0) // error, complete early
                 ec = net::error::bad_descriptor;
-            else 
+            else
             {
                 wait_res = ::waitpid(pid_, &exit_code, WNOHANG);
                 if (wait_res == -1)
