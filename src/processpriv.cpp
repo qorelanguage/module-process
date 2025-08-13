@@ -816,8 +816,11 @@ bool ProcessPriv::running(ExceptionSink* xsink) {
         //printd(5, "ProcessPriv::running() detached PID %d; waitpid() result: %d code: %d exited: %d signaled: %d\n",
         //    detached_pid, res, code, (int)WIFEXITED(code), (int)WIFSIGNALED(code));
         if (res == -1) {
-            xsink->raiseException("PROCESS-RUNNING-ERROR", "Cannot check detached process with PID %d: %s",
-                detached_pid, strerror(errno));
+            // if waitpid() returns -1 with errno == ECHILD, then the process has already exited
+            if (errno != ECHILD) {
+                xsink->raiseException("PROCESS-RUNNING-ERROR", "Cannot check detached process with PID %d: %s",
+                    detached_pid, strerror(errno));
+            }
             return false;
         } else if (!res) {
             return true;
