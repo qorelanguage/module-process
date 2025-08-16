@@ -160,6 +160,8 @@ private:
 
 #ifdef __linux__
     DLLLOCAL static QoreHashNode* getMemorySummaryInfoLinux(int pid, ExceptionSink* xsink);
+    DLLLOCAL static QoreHashNode* getMemorySummaryInfoLinuxSmaps(ExceptionSink* xsink, int pid, QoreFile& f,
+        ReferenceHolder<QoreHashNode>& rv);
 #endif
 #if defined(__APPLE__) && defined(__MACH__)
     DLLLOCAL static QoreHashNode* getMemorySummaryInfoDarwin(int pid, ExceptionSink* xsink);
