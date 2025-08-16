@@ -32,7 +32,7 @@
 
 Summary: process module for Qore
 Name: qore-process-module
-Version: 1.1.0
+Version: 1.1.1
 Release: 1%{dist}
 License: LGPL-2.1-or-later
 Group: Development/Languages/Other
@@ -100,6 +100,9 @@ process module.
 %doc docs/process test
 
 %changelog
+* Sat Aug 16 2025 David Nichols <david.nichols@qoretechnologies.com>
+- updated to version 1.1.1
+
 * Mon Dec 19 2022 David Nichols <david.nichols@qoretechnologies.com>
 - updated to version 1.0.5
 

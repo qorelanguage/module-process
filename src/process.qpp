@@ -53,6 +53,11 @@ Version 1.0. (See http://www.boost.org/LICENSE_1_0.txt)
 
     @section process_relnotes Process Module Release History
 
+    @subsection process_v1_1_1 process v1.1.1
+    - use <tt>/proc/PID/smaps_rollup</tt> if available to get private memory size on Linux which results in reliable
+      private memory size info as well as much faster and more efficient execution on Linux
+      (<a href="https://github.com/qorelanguage/qore/issues/4980">issue 4980</a>)
+
     @subsection process_v1_1_0 process v1.1.0
     - added the \c close_fds option
 

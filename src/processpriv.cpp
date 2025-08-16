@@ -1120,14 +1120,18 @@ void ProcessPriv::write(const char* val, size_t n, ExceptionSink* xsink) {
 #include <inttypes.h>
 #include <sys/user.h>
 
+constexpr size_t BUFSIZE = 4096;
+constexpr int TIMEOUT_MS = 1000; // 1 second timeout for reading
+
 QoreHashNode* ProcessPriv::getMemorySummaryInfoLinux(int pid, ExceptionSink* xsink) {
     // open memory map for file
-    QoreFile f;
+    QoreFile f(QCS_USASCII);
 
     {
         QoreStringMaker str("/proc/%d/statm", pid);
         if (f.open(str.c_str())) {
-            xsink->raiseErrnoException("PROCESS-GETMEMORYINFO-ERROR", errno, "could not read process status for PID %d", pid);
+            xsink->raiseErrnoException("PROCESS-GETMEMORYINFO-ERROR", errno, "could not read process status for "
+                "PID %d", pid);
             return nullptr;
         }
     }
@@ -1155,9 +1159,65 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoLinux(int pid, ExceptionSink* xsi
     rv->setKeyValue("rss", rss, xsink);
 
     {
+        // see if this kernel support /proc/PID/smaps_rollup
+        QoreStringMaker str("/proc/%d/smaps_rollup", pid);
+        if (f.open(str.c_str())) {
+            // if not, try to read /proc/PID/smaps
+            return getMemorySummaryInfoLinuxSmaps(xsink, pid, f, rv);
+        }
+    }
+
+    SimpleRefHolder<QoreStringNode> str(new QoreStringNode(QCS_USASCII));
+    char buf[BUFSIZE];
+
+    while (true) {
+        size_t len = f.read(buf, BUFSIZE, TIMEOUT_MS, xsink);
+        if (*xsink) {
+            return nullptr;
+        }
+        if (!len) {
+            break;
+        }
+        str->concat(buf, len);
+    }
+
+    if (!str->size()) {
+        xsink->raiseException("PROCESS-GETMEMORYINFO-ERROR", "Could not read memory map for PID %d", pid);
+        return nullptr;
+    }
+
+    ssize_t pos = str->find("Pss:");
+    if (pos == -1) {
+        xsink->raiseException("PROCESS-GETMEMORYINFO-ERROR", "Could not find PSS in memory map for PID %d", pid);
+        return nullptr;
+    }
+    // get PSS value
+    pos += 2; // skip "PSS:"
+    char c;
+    do {
+        ++pos;
+        c = (**str)[pos];
+        if (!c) {
+            xsink->raiseException("PROCESS-GETMEMORYINFO-ERROR", "PSS value missing in memory map for PID %d", pid);
+            return nullptr;
+        }
+    } while (!isdigit(c));
+
+    // read in PSS value
+    int64 pss = strtoll(str->c_str() + pos, nullptr, 10) * 1024; // convert to bytes
+
+    rv->setKeyValue("priv", pss, xsink);
+
+    return rv.release();
+}
+
+QoreHashNode* ProcessPriv::getMemorySummaryInfoLinuxSmaps(ExceptionSink* xsink, int pid, QoreFile& f,
+        ReferenceHolder<QoreHashNode>& rv) {
+    {
         QoreStringMaker str("/proc/%d/smaps", pid);
         if (f.open(str.c_str())) {
-            xsink->raiseErrnoException("PROCESS-GETMEMORYINFO-ERROR", errno, "could not read virtual shared memory map '%s' for PID %d", str.c_str(), pid);
+            xsink->raiseErrnoException("PROCESS-GETMEMORYINFO-ERROR", errno, "could not read virtual shared memory "
+                "map '%s' for PID %d", str.c_str(), pid);
             return nullptr;
         }
     }
@@ -1165,7 +1225,11 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoLinux(int pid, ExceptionSink* xsi
     int64 priv_size = 0;
     bool need_line = true;
 
+    // FIXME: reading smaps line by line will result in an inconsistnt result; the entire smap needs to be read into
+    // a single buffer in one read, but the kernel buffer is not big enough to allow this in many cases, so this
+    // version if inherently unreliable in any case
     while (true) {
+        QoreString l;
         if (need_line && f.readLine(l)) {
             break;
         }
@@ -1268,7 +1332,8 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoDarwin(int pid, ExceptionSink* xs
         return nullptr;
     }
 
-    //printd(5, "proc_pidinfo() rc %d vsz: " QLLD " rss: " QLLD "\n", rc, taskinfo.pti_virtual_size, taskinfo.pti_resident_size);
+    //printd(5, "proc_pidinfo() rc %d vsz: " QLLD " rss: " QLLD "\n", rc, taskinfo.pti_virtual_size,
+    //    taskinfo.pti_resident_size);
 
     ReferenceHolder<QoreHashNode> rv(new QoreHashNode(hashdeclMemorySummaryInfo, xsink), xsink);
 
@@ -1283,7 +1348,8 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoDarwin(int pid, ExceptionSink* xs
     // do not free the port allocated here
     kern_return_t kr = task_for_pid(mach_task_self(), pid, &task);
     if (kr != KERN_SUCCESS) {
-        xsink->raiseException("PROCESS-GETMEMORYINFO-ERROR", "task_for_pid() returned %d: %s", (int)kr, mach_error_string(kr));
+        xsink->raiseException("PROCESS-GETMEMORYINFO-ERROR", "task_for_pid() returned %d: %s", (int)kr,
+            mach_error_string(kr));
         return nullptr;
     }
 
@@ -1303,7 +1369,8 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoDarwin(int pid, ExceptionSink* xs
         if (kr == KERN_INVALID_ADDRESS)
             break;
         if (kr != KERN_SUCCESS) {
-            xsink->raiseException("PROCESS-GETMEMORYINFO-ERROR", "mach_vm_region() returned %d: %s", (int)kr, mach_error_string(kr));
+            xsink->raiseException("PROCESS-GETMEMORYINFO-ERROR", "mach_vm_region() returned %d: %s", (int)kr,
+                mach_error_string(kr));
             return nullptr;
         }
         //printd(0, "addr: %p size: %ld share_mode: %d\n", addr, vmsize, info.share_mode);
@@ -1357,14 +1424,16 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoSolaris(int pid, ExceptionSink* x
     int prmap_fd;
 
     if (proc_get_psinfo(pid, &psp) == -1) {
-        xsink->raiseException("PROCESS-GETMEMORYINFO-ERROR", "proc_get_psinfo could not read process status for PID %d", pid);
+        xsink->raiseException("PROCESS-GETMEMORYINFO-ERROR", "proc_get_psinfo could not read process status for "
+            "PID %d", pid);
         return nullptr;
     }
 
     QoreStringMaker prmap_path("/proc/%d/map", pid);
     prmap_fd = open(prmap_path.c_str(), O_RDONLY);
     if (prmap_fd == -1) {
-        xsink->raiseErrnoException("PROCESS-GETMEMORYINFO-ERROR", errno, "could not open virtual shared memory map '%s' for PID %d", prmap_path.c_str(), pid);
+        xsink->raiseErrnoException("PROCESS-GETMEMORYINFO-ERROR", errno, "could not open virtual shared memory "
+            "map '%s' for PID %d", prmap_path.c_str(), pid);
         return nullptr;
     }
 
@@ -1378,12 +1447,14 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfoSolaris(int pid, ExceptionSink* x
         case 0:
             break;
         case -1:
-            xsink->raiseErrnoException("PROCESS-GETMEMORYINFO-ERROR", errno, "could not read virtual shared memory map '%s' for PID %d", prmap_path.c_str(), pid);
+            xsink->raiseErrnoException("PROCESS-GETMEMORYINFO-ERROR", errno, "could not read virtual shared memory "
+                "map '%s' for PID %d", prmap_path.c_str(), pid);
             close(prmap_fd);
             return nullptr;
             break;
         default:
-            xsink->raiseException("PROCESS-GETMEMORYINFO-ERROR", "failed to read a prmap structure from '%s' for PID %d, only read %d bytes\n", prmap_path.c_str(), pid, read_ret);
+            xsink->raiseException("PROCESS-GETMEMORYINFO-ERROR", "failed to read a prmap structure from '%s' for "
+                "PID %d, only read %d bytes\n", prmap_path.c_str(), pid, read_ret);
             close(prmap_fd);
             return nullptr;
     }
@@ -1458,11 +1529,13 @@ void ProcessPriv::terminate(int pid, ExceptionSink* xsink) {
 void ProcessPriv::waitForTermination(int pid, ExceptionSink* xsink) {
 #ifdef HAVE_KILL
     while (true) {
-        if (kill(pid, 0))
+        if (kill(pid, 0)) {
             break;
+        }
         usleep(WAIT_POLL_US);
     }
 #else
-    xsink->raiseException("PROCESS-WAITFORTERMINATION-UNSUPPORTED-ERROR", "this call is not supported on this platform");
+    xsink->raiseException("PROCESS-WAITFORTERMINATION-UNSUPPORTED-ERROR", "this call is not supported on this "
+        "platform");
 #endif
 }
