@@ -1713,18 +1713,39 @@ int64 ProcessPriv::getDescriptorCount(ExceptionSink* xsink, int pid) {
 #include <libproc.h>
 
 int64 ProcessPriv::getDescriptorCount(ExceptionSink* xsink, int pid) {
-    int count = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nullptr, 0);
-    if (count <= 0) {
-        xsink->raiseErrnoException("PROCESS-GETDESCRIPTORCOUNT-ERROR", errno, "could not read file descriptor count "
-            "for PID %d", pid);
-        return -1;
+    int count;
+    while (true) {
+        int bufsize = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nullptr, 0);
+        if (bufsize <= 0) {
+            xsink->raiseErrnoException("PROCESS-GETDESCRIPTORCOUNT-ERROR", errno, "could not read file descriptor "
+                "count for PID %d", pid);
+            return -1;
+        }
+        // we have the max allocated size, now we need to find the actual number of descriptors by making a real call
+        void* buf = malloc(bufsize);
+        if (!buf) {
+            xsink->raiseException("PROCESS-GETDESCRIPTORCOUNT-ERROR", "could not allocate memory for file descriptor "
+                "buffer for PID %d", pid);
+            return -1;
+        }
+        ON_BLOCK_EXIT(free, buf);
+        count = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, buf, bufsize);
+        if (count <= 0) {
+            xsink->raiseErrnoException("PROCESS-GETDESCRIPTORCOUNT-ERROR", errno, "could not read file descriptor "
+                "count for PID %d", pid);
+            return -1;
+        }
+        if (count > bufsize) {
+            printd(0, "ProcessPriv::getDescriptorCount() count %d > bufsize %d for PID %d; retrying\n", count,
+                bufsize, pid);
+            continue;
+        }
+        break;
     }
-    int64 rv = count / sizeof(proc_fdinfo) - 20;
-    assert(rv >= 0);
-    return rv;
+
+    return count / sizeof(proc_fdinfo);
 }
 #endif
-
 
 #if !defined(__linux__) && (!defined(__APPLE__) || !defined(__MACH__))
 int64 ProcessPriv::getDescriptorCount(int pid, ExceptionSink* xsink) {
