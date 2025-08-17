@@ -108,9 +108,8 @@ public class Main inherits QUnit::Test {
 
     getDescriptorCountTest() {
         if (HAVE_PROCESS_GETDESCRIPTORCOUNT) {
-            int pid = getpid();
-            int count = Process::getDescriptorCount(pid);
-            assertGt(0, count, "getDescriptorCount for current process");
+            assertGt(0, Process::getDescriptorCount(getpid()), "getDescriptorCount for current process");
+            assertGt(0, Process::getDescriptorCount(), "getDescriptorCount for current process");
         } else {
             assertThrows("PROCESS-GETDESCRIPTORCOUNT-UNSUPPORTED-ERROR", \Process::getDescriptorCount(), -10);
         }

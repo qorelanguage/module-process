@@ -859,3 +859,17 @@ static list<float> Process::getLoadAvg() [flags=RET_VALUE_ONLY] {
 static int Process::getDescriptorCount(int pid) [flags=RET_VALUE_ONLY] {
     return ProcessPriv::getDescriptorCount(xsink, pid);
 }
+
+//! Returns the number of file descriptors open for the current process
+/** @return the number of file descriptors open for the given PID
+
+    @throw PROCESS-GETDESCRIPTORCOUNT-ERROR an error occurred getting the descriptor count
+    @throw PROCESS-GETDESCRIPTORCOUNT-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for
+    this method on the current platform
+
+    @see
+    - @ref HAVE_PROCESS_GETDESCRIPTORCOUNT
+*/
+static int Process::getDescriptorCount() [flags=RET_VALUE_ONLY] {
+    return ProcessPriv::getDescriptorCount(xsink, getpid());
+}
