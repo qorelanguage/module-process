@@ -812,18 +812,25 @@ bool ProcessPriv::running(ExceptionSink* xsink) {
 
     if (detached_pid) {
         int code = 0;
-        int res = ::waitpid(detached_pid, &code, WNOHANG);
-        //printd(5, "ProcessPriv::running() detached PID %d; waitpid() result: %d code: %d exited: %d signaled: %d\n",
-        //    detached_pid, res, code, (int)WIFEXITED(code), (int)WIFSIGNALED(code));
-        if (res == -1) {
-            // if waitpid() returns -1 with errno == ECHILD, then the process has already exited
-            if (errno != ECHILD) {
-                xsink->raiseException("PROCESS-RUNNING-ERROR", "Cannot check detached process with PID %d: %s",
-                    detached_pid, strerror(errno));
+        while (true) {
+            int res = ::waitpid(detached_pid, &code, WNOHANG);
+            //printd(5, "ProcessPriv::running() detached PID %d; waitpid() result: %d code: %d exited: %d signaled: %d\n",
+            //    detached_pid, res, code, (int)WIFEXITED(code), (int)WIFSIGNALED(code));
+            if (res == -1) {
+                if (errno == EINTR) {
+                    // interrupted by a signal, try again
+                    continue;
+                }
+                // if waitpid() returns -1 with errno == ECHILD, then the process has already exited
+                if (errno != ECHILD) {
+                    xsink->raiseException("PROCESS-RUNNING-ERROR", "Cannot check detached process with PID %d: %s",
+                        detached_pid, strerror(errno));
+                }
+                return false;
+            } else if (!res) {
+                return true;
             }
-            return false;
-        } else if (!res) {
-            return true;
+            break;
         }
 
         if (!WIFEXITED(code) && !WIFSIGNALED(code)) {
@@ -943,13 +950,19 @@ bool ProcessPriv::wait(ExceptionSink* xsink) {
         // wait on detached process
         if (detached_pid) {
             int wstatus;
-            if (waitpid(detached_pid, &wstatus, 0) == -1) {
-                if (errno == ECHILD) {
+            while (true) {
+                if (waitpid(detached_pid, &wstatus, 0) == -1) {
+                    if (errno == ECHILD) {
+                        return false;
+                    }
+                    if (errno == EINTR) {
+                        continue;
+                    }
+                    xsink->raiseException("PROCESS-WAIT-ERROR", "Cannot get exit code for detached process with "
+                        "PID %d: %s", detached_pid, strerror(errno));
                     return false;
                 }
-                xsink->raiseException("PROCESS-WAIT-ERROR", "Cannot get exit code for detached process with PID %d: "
-                    "%s", detached_pid, strerror(errno));
-                return false;
+                break;
             }
             std::unique_lock<std::mutex> lock(mtx_process_status);
             //printd(5, "process::async_wait() (%d: %s) %s; setting running_flag = false (waiting: %d)\n", ec.value(),
@@ -1670,7 +1683,13 @@ void ProcessPriv::terminate(int pid, ExceptionSink* xsink) {
     // now we call waitpid in case the program killed was a child process
     // in case not, errors are ignored here
     int status;
-    ::waitpid(pid, &status, 0);
+    while (true) {
+        int res = ::waitpid(pid, &status, 0);
+        if ((res == -1) && (errno == EINTR)) {
+            continue;
+        }
+        break;
+    }
 #else
     xsink->raiseException("PROCESS-TERMINATE-UNSUPPORTED-ERROR", "this call is not supported on this platform");
 #endif
