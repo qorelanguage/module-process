@@ -1689,3 +1689,46 @@ void ProcessPriv::waitForTermination(int pid, ExceptionSink* xsink) {
         "platform");
 #endif
 }
+
+#if defined(__linux__)
+#include <sys/stat.h>
+
+int64 ProcessPriv::getDescriptorCount(ExceptionSink* xsink, int pid) {
+    // NOTE from https://docs.kernel.org/filesystems/proc.html
+    // "The number of open files for the process is stored in ‘size’ member of stat() output for /proc/<pid>/fd for
+    // fast access"
+    QoreStringMaker dir("/proc/%d/fd", pid);
+    struct stat statbuf;
+    int rc = stat(dir.c_str(), &statbuf);
+    if (rc < 0) {
+        xsink->raiseErrnoException("PROCESS-GETDESCRIPTORCOUNT-ERROR", errno, "could not read file descriptor count "
+            "for PID %d", pid);
+        return -1;
+    }
+    return statbuf.st_size;
+}
+#endif
+
+#if defined(__APPLE__) && defined(__MACH__)
+#include <libproc.h>
+
+int64 ProcessPriv::getDescriptorCount(ExceptionSink* xsink, int pid) {
+    int count = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nullptr, 0);
+    if (count <= 0) {
+        xsink->raiseErrnoException("PROCESS-GETDESCRIPTORCOUNT-ERROR", errno, "could not read file descriptor count "
+            "for PID %d", pid);
+        return -1;
+    }
+    int64 rv = count / sizeof(proc_fdinfo) - 20;
+    assert(rv >= 0);
+    return rv;
+}
+#endif
+
+
+#if !defined(__linux__) && (!defined(__APPLE__) || !defined(__MACH__))
+int64 ProcessPriv::getDescriptorCount(int pid, ExceptionSink* xsink) {
+    xsink->raiseException("PROCESS-GETDESCRIPTORCOUNT-UNSUPPORTED-ERROR", "this call is not supported on this "
+        "platform");
+}
+#endif

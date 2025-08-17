@@ -56,6 +56,7 @@ Version 1.0. (See http://www.boost.org/LICENSE_1_0.txt)
     @subsection process_v2_0 process v2.0
     - updated to use Boost.Process v2.0
     - removed the \c close_fds option; it's automatic with Boost.Process v2.0
+    - added Process::getDescriptorCount() to get the number of open file descriptors for a process
 
     @subsection process_v1_1_1 process v1.1.1
     - use <tt>/proc/PID/smaps_rollup</tt> if available to get private memory size on Linux which results in reliable

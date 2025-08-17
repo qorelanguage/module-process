@@ -39,8 +39,10 @@
 
 #if defined(__linux__) || (defined(__APPLE__) && defined(__MACH__)) || defined(__sun__)
 #define HAVE_PROCESS_GETMEMORYINFO 1
+#define HAVE_PROCESS_GETDESCRIPTORCOUNT 1
 #else
 #define HAVE_PROCESS_GETMEMORYINFO 0
+#define HAVE_PROCESS_GETDESCRIPTORCOUNT 0
 #endif
 
 #ifdef HAVE_KILL
@@ -63,17 +65,20 @@ QoreThreadLock constructor_serializer;
     Constants related to process module functionality
  */
 ///@{
-//! defines if the @ref Qore::Process::Process::getMemorySummaryInfo() "Process::getMemorySummaryInfo()" methods are available on the current platform
+//! Defines if the @ref Qore::Process::Process::getMemorySummaryInfo() "Process::getMemorySummaryInfo()" methods are available on the current platform
 const HAVE_PROCESS_GETMEMORYINFO = bool(HAVE_PROCESS_GETMEMORYINFO);
 
-//! defines if the @ref Qore::Process::Process::checkPid() "Process::checkPid()" method is available on the current platform
+//! Defines if the @ref Qore::Process::Process::checkPid() "Process::checkPid()" method is available on the current platform
 const HAVE_PROCESS_CHECKPID = bool(HAVE_PROCESS_CHECKPID);
 
-//! defines if the static @ref Qore::Process::Process::terminate() "Process::terminate()" method is available on the current platform
+//! Defines if the static @ref Qore::Process::Process::terminate() "Process::terminate()" method is available on the current platform
 const HAVE_PROCESS_TERMINATE = bool(HAVE_PROCESS_TERMINATE);
 
-//! defines if the static @ref Qore::Process::Process::waitForTermination() "Process::waitForTermination()" method is available on the current platform
+//! Defines if the static @ref Qore::Process::Process::waitForTermination() "Process::waitForTermination()" method is available on the current platform
 const HAVE_PROCESS_WAITFORTERMINATION = bool(HAVE_PROCESS_WAITFORTERMINATION);
+
+//! Defines if @ref Qore::Process::Process::getDescriptorCount() "Process::getDescriptorCount()" is available
+const HAVE_PROCESS_GETDESCRIPTORCOUNT = bool(HAVE_PROCESS_GETDESCRIPTORCOUNT);
 ///@}
 
 //! A hash of summary memory information as provided by @ref Qore::Process::Process::getMemorySummaryInfo() "Process::getMemorySummaryInfo()"
@@ -661,9 +666,30 @@ nothing Process::write(number n) {
 */
 hash<MemorySummaryInfo> Process::getMemorySummaryInfo() {
     int pid = priv->id(xsink);
-    if (*xsink)
+    if (*xsink) {
         return QoreValue();
+    }
     return ProcessPriv::getMemorySummaryInfo(pid, xsink);
+}
+
+//! Returns the number of file descriptors open for the given PID
+/** @param pid the PID of the process
+    @return the number of file descriptors open for the given PID
+
+    @throw PROCESS-GETDESCRIPTORCOUNT-ERROR an error occurred getting the descriptor count (PID does not exist or no
+    permission to read the process's file descriptor table)
+    @throw PROCESS-GETDESCRIPTORCOUNT-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for
+    this method on the current platform
+
+    @see
+    - @ref HAVE_PROCESS_GETDESCRIPTORCOUNT
+*/
+int Process::getDescriptorCount() {
+    int pid = priv->id(xsink);
+    if (*xsink) {
+        return QoreValue();
+    }
+    return ProcessPriv::getDescriptorCount(xsink, pid);
 }
 
 //! Search for full path of command in current process's PATH
@@ -816,4 +842,20 @@ static list<float> Process::getLoadAvg() [flags=RET_VALUE_ONLY] {
         assert(!*xsink);
     }
     return rv.release();
+}
+
+//! Returns the number of file descriptors open for the given PID
+/** @param pid the PID of the process
+    @return the number of file descriptors open for the given PID
+
+    @throw PROCESS-GETDESCRIPTORCOUNT-ERROR an error occurred getting the descriptor count (PID does not exist or no
+    permission to read the process's file descriptor table)
+    @throw PROCESS-GETDESCRIPTORCOUNT-UNSUPPORTED-ERROR this exception is thrown if there is no implementation for
+    this method on the current platform
+
+    @see
+    - @ref HAVE_PROCESS_GETDESCRIPTORCOUNT
+*/
+static int Process::getDescriptorCount(int pid) [flags=RET_VALUE_ONLY] {
+    return ProcessPriv::getDescriptorCount(xsink, pid);
 }

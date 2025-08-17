@@ -116,6 +116,8 @@ public:
 
     DLLLOCAL static void waitForTermination(int pid, ExceptionSink* xsink);
 
+    DLLLOCAL static int64 getDescriptorCount(ExceptionSink* xsink, int pid);
+
 protected:
     DLLLOCAL virtual ~ProcessPriv();
 
@@ -158,14 +160,16 @@ private:
 
     DLLLOCAL void getExitCode(ExceptionSink* xsink);
 
+#if defined(__APPLE__) && defined(__MACH__)
+    DLLLOCAL static QoreHashNode* getMemorySummaryInfoDarwin(int pid, ExceptionSink* xsink);
+#endif
+
 #ifdef __linux__
     DLLLOCAL static QoreHashNode* getMemorySummaryInfoLinux(int pid, ExceptionSink* xsink);
     DLLLOCAL static QoreHashNode* getMemorySummaryInfoLinuxSmaps(ExceptionSink* xsink, int pid, QoreFile& f,
         ReferenceHolder<QoreHashNode>& rv);
 #endif
-#if defined(__APPLE__) && defined(__MACH__)
-    DLLLOCAL static QoreHashNode* getMemorySummaryInfoDarwin(int pid, ExceptionSink* xsink);
-#endif
+
 #ifdef __sun__
     DLLLOCAL static QoreHashNode* getMemorySummaryInfoSolaris(int pid, ExceptionSink* xsink);
 #endif
