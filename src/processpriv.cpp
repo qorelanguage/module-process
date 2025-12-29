@@ -2397,7 +2397,7 @@ QoreHashNode* ProcessPriv::run(const char* command, const QoreListNode* argument
         if (!chunk) {
             break;
         }
-        stdout_str->concat(chunk);
+        stdout_str->concat(chunk->c_str(), chunk->size());
         chunk->deref();
     }
 
@@ -2411,7 +2411,7 @@ QoreHashNode* ProcessPriv::run(const char* command, const QoreListNode* argument
         if (!chunk) {
             break;
         }
-        stderr_str->concat(chunk);
+        stderr_str->concat(chunk->c_str(), chunk->size());
         chunk->deref();
     }
 
