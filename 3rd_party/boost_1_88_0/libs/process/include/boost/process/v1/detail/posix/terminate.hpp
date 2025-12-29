@@ -21,6 +21,11 @@ namespace boost { namespace process { BOOST_PROCESS_V1_INLINE namespace v1 { nam
 
 inline void terminate(const child_handle &p, std::error_code &ec) noexcept
 {
+    // Safety check: pid <= 0 would kill all processes or process group
+    // This matches the v2 API behavior
+    if (p.pid <= 0)
+        return;
+
     if (::kill(p.pid, SIGKILL) == -1)
         ec = boost::process::v1::detail::get_last_error();
     else

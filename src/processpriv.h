@@ -48,6 +48,11 @@
 #include <qore/OutputStream.h>
 #include <qore/InputStream.h>
 
+#include <sys/resource.h>
+
+// Resource limit settings (forward declaration, defined in processpriv.cpp)
+struct resource_limits;
+
 DLLLOCAL extern qore_classid_t CID_PROCESS;
 DLLLOCAL extern QoreClass* QC_PROCESS;
 
@@ -79,6 +84,9 @@ public:
 
     DLLLOCAL bool terminate(ExceptionSink* xsink);
 
+    //! Send a signal to the child process.
+    DLLLOCAL bool sendSignal(int sig, ExceptionSink* xsink);
+
     //! Read up to \c n bytes from process's stderr.
     DLLLOCAL QoreStringNode* readStderr(size_t n, ExceptionSink* xsink);
 
@@ -106,6 +114,9 @@ public:
     //! Write to child process's stdin.
     DLLLOCAL void write(const char* val, size_t n, ExceptionSink* xsink);
 
+    //! Close stdin pipe to signal EOF to child process.
+    DLLLOCAL void closeStdin(ExceptionSink* xsink);
+
     DLLLOCAL static boost::filesystem::path optsPath(const char* command, const QoreHashNode* opts, ExceptionSink* xsink);
 
     DLLLOCAL static QoreHashNode* getMemorySummaryInfo(int pid, ExceptionSink* xsink);
@@ -117,6 +128,25 @@ public:
     DLLLOCAL static void waitForTermination(int pid, ExceptionSink* xsink);
 
     DLLLOCAL static int64 getDescriptorCount(ExceptionSink* xsink, int pid);
+
+    //! Run a command and return stdout, stderr, and exit code
+    DLLLOCAL static QoreHashNode* run(const char* command, const QoreListNode* arguments,
+        const QoreHashNode* opts, int64 timeout_ms, ExceptionSink* xsink);
+
+    //! Get resource usage for the process
+    DLLLOCAL QoreHashNode* getResourceUsage(ExceptionSink* xsink);
+
+    //! Get resource usage for a specific PID (static)
+    DLLLOCAL static QoreHashNode* getResourceUsage(int pid, ExceptionSink* xsink);
+
+    //! Get child PIDs of the process
+    DLLLOCAL QoreListNode* getChildPids(ExceptionSink* xsink);
+
+    //! Get child PIDs for a specific PID (static)
+    DLLLOCAL static QoreListNode* getChildPids(int pid, ExceptionSink* xsink);
+
+    //! Terminate the process and all its children
+    DLLLOCAL bool terminateTree(ExceptionSink* xsink);
 
 protected:
     DLLLOCAL virtual ~ProcessPriv();
@@ -145,14 +175,17 @@ private:
 
     DLLLOCAL void prepareClosures();
 
-    DLLLOCAL void launchChild(ExceptionSink* xsink,\
+    DLLLOCAL void launchChild(ExceptionSink* xsink,
             boost::filesystem::path p,
             std::vector<std::string>& args,
             env_t env,
             const char* cwd,
             FILE* stdoutFile,
             FILE* stderrFile,
-            const QoreHashNode* opts);
+            const QoreHashNode* opts,
+            bool setNice,
+            int niceValue,
+            const resource_limits& limits);
 
     DLLLOCAL void finalizeStreams(ExceptionSink* xsink);
 

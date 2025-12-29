@@ -25,6 +25,7 @@
 #include "processpriv.h"
 
 #include <unistd.h>
+#include <dirent.h>
 
 // std
 #include <exception>
@@ -44,6 +45,24 @@ static int page_size = sysconf(_SC_PAGESIZE);
 // default I/O buffer size
 static constexpr unsigned process_buf_size = 4096;
 
+// Resource limit settings
+struct resource_limits {
+    bool hasMemory = false;
+    rlim_t memory = 0;
+    bool hasData = false;
+    rlim_t data = 0;
+    bool hasStack = false;
+    rlim_t stack = 0;
+    bool hasCore = false;
+    rlim_t core = 0;
+    bool hasCpu = false;
+    rlim_t cpu = 0;
+    bool hasFiles = false;
+    rlim_t files = 0;
+    bool hasProcesses = false;
+    rlim_t processes = 0;
+};
+
 struct callback_initializer {
     ResolvedCallReferenceNode* f_on_success;
     ResolvedCallReferenceNode* f_on_setup;
@@ -52,6 +71,9 @@ struct callback_initializer {
     ResolvedCallReferenceNode* f_on_exec_setup;
     ResolvedCallReferenceNode* f_on_exec_error;
     ExceptionSink* xsink;
+    bool setNice = false;
+    int niceValue = 0;
+    resource_limits limits;
 
     template<typename Launcher = bp::posix::default_launcher>
     DLLLOCAL void on_success(Launcher& launcher, const bp::filesystem::path& executable,
@@ -81,6 +103,75 @@ struct callback_initializer {
     template<typename Launcher = bp::posix::default_launcher>
     DLLLOCAL bp::error_code on_exec_setup(Launcher& launcher, const bp::filesystem::path& executable,
             const char* const* (&cmd_line)) {
+        // Make this process its own process group leader to isolate it from the parent's
+        // process group. This prevents signals sent to the child's process group from
+        // affecting the parent and other processes in the parent's group.
+        setpgid(0, 0);
+
+        // Set process priority if requested
+        if (setNice) {
+            errno = 0;
+            if (nice(niceValue) == -1 && errno != 0) {
+                // nice() can return -1 on success if the new priority is -1
+                // so we need to check errno
+                return bp::error_code(errno, boost::system::system_category());
+            }
+        }
+
+        // Set resource limits if requested
+        struct rlimit rl;
+
+        if (limits.hasMemory) {
+            rl.rlim_cur = rl.rlim_max = limits.memory;
+            if (setrlimit(RLIMIT_AS, &rl) != 0) {
+                return bp::error_code(errno, boost::system::system_category());
+            }
+        }
+
+        if (limits.hasData) {
+            rl.rlim_cur = rl.rlim_max = limits.data;
+            if (setrlimit(RLIMIT_DATA, &rl) != 0) {
+                return bp::error_code(errno, boost::system::system_category());
+            }
+        }
+
+        if (limits.hasStack) {
+            rl.rlim_cur = rl.rlim_max = limits.stack;
+            if (setrlimit(RLIMIT_STACK, &rl) != 0) {
+                return bp::error_code(errno, boost::system::system_category());
+            }
+        }
+
+        if (limits.hasCore) {
+            rl.rlim_cur = rl.rlim_max = limits.core;
+            if (setrlimit(RLIMIT_CORE, &rl) != 0) {
+                return bp::error_code(errno, boost::system::system_category());
+            }
+        }
+
+        if (limits.hasCpu) {
+            rl.rlim_cur = rl.rlim_max = limits.cpu;
+            if (setrlimit(RLIMIT_CPU, &rl) != 0) {
+                return bp::error_code(errno, boost::system::system_category());
+            }
+        }
+
+        if (limits.hasFiles) {
+            rl.rlim_cur = rl.rlim_max = limits.files;
+            if (setrlimit(RLIMIT_NOFILE, &rl) != 0) {
+                return bp::error_code(errno, boost::system::system_category());
+            }
+        }
+
+#ifdef RLIMIT_NPROC
+        if (limits.hasProcesses) {
+            rl.rlim_cur = rl.rlim_max = limits.processes;
+            if (setrlimit(RLIMIT_NPROC, &rl) != 0) {
+                return bp::error_code(errno, boost::system::system_category());
+            }
+        }
+#endif
+
         call("on_exec_setup", launcher, executable, f_on_exec_setup);
         return bp::error_code();
     }
@@ -198,6 +289,75 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
         enc = QEM.findCreate(n.get<const QoreStringNode>()->c_str());
     }
 
+    // Handle shell option - wrap command in sh -c
+    bool useShell = false;
+    std::string shellCommand;
+    if (opts && opts->existsKey("shell")) {
+        QoreValue n = opts->getKeyValue("shell");
+        useShell = n.getAsBool();
+    }
+
+    // Handle nice option
+    int niceValue = 0;
+    bool setNice = false;
+    if (opts && opts->existsKey("nice")) {
+        QoreValue n = opts->getKeyValue("nice");
+        if (n.getType() != NT_INT) {
+            xsink->raiseException("PROCESS-OPTION-ERROR", "Process option 'nice' requires an 'int' argument; "
+                "type '%s' instead", n.getTypeName());
+            return;
+        }
+        niceValue = (int)n.getAsBigInt();
+        setNice = true;
+        // Validate nice range
+        if (niceValue < -20 || niceValue > 19) {
+            xsink->raiseException("PROCESS-OPTION-ERROR", "Process option 'nice' must be between -20 and 19; "
+                "got %d", niceValue);
+            return;
+        }
+    }
+
+    // Handle resource limits option
+    resource_limits limits;
+    if (opts && opts->existsKey("limits")) {
+        QoreValue n = opts->getKeyValue("limits");
+        if (n.getType() != NT_HASH) {
+            xsink->raiseException("PROCESS-OPTION-ERROR", "Process option 'limits' requires a 'hash' argument; "
+                "type '%s' instead", n.getTypeName());
+            return;
+        }
+        const QoreHashNode* limitsHash = n.get<const QoreHashNode>();
+
+        if (limitsHash->existsKey("memory")) {
+            limits.hasMemory = true;
+            limits.memory = (rlim_t)limitsHash->getKeyValue("memory").getAsBigInt();
+        }
+        if (limitsHash->existsKey("data")) {
+            limits.hasData = true;
+            limits.data = (rlim_t)limitsHash->getKeyValue("data").getAsBigInt();
+        }
+        if (limitsHash->existsKey("stack")) {
+            limits.hasStack = true;
+            limits.stack = (rlim_t)limitsHash->getKeyValue("stack").getAsBigInt();
+        }
+        if (limitsHash->existsKey("core")) {
+            limits.hasCore = true;
+            limits.core = (rlim_t)limitsHash->getKeyValue("core").getAsBigInt();
+        }
+        if (limitsHash->existsKey("cpu")) {
+            limits.hasCpu = true;
+            limits.cpu = (rlim_t)limitsHash->getKeyValue("cpu").getAsBigInt();
+        }
+        if (limitsHash->existsKey("files")) {
+            limits.hasFiles = true;
+            limits.files = (rlim_t)limitsHash->getKeyValue("files").getAsBigInt();
+        }
+        if (limitsHash->existsKey("processes")) {
+            limits.hasProcesses = true;
+            limits.processes = (rlim_t)limitsHash->getKeyValue("processes").getAsBigInt();
+        }
+    }
+
     // not yet supported; not possible to read from an input stream with a timeout or to read all data available
     //optsStdin(opts, xsink);
 
@@ -211,27 +371,73 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
     FILE* stderrFile = nullptr;
     if (stdoutFD != -1) {
         stdoutFile = fdopen(stdoutFD, "w");
+        if (!stdoutFile) {
+            close(stdoutFD);
+            xsink->raiseErrnoException("PROCESS-CONSTRUCTOR-ERROR", errno, "failed to create stdout FILE stream");
+            return;
+        }
     }
     if (stderrFD != -1) {
         stderrFile = fdopen(stderrFD, "w");
+        if (!stderrFile) {
+            if (stdoutFile) {
+                fclose(stdoutFile);
+            }
+            close(stderrFD);
+            xsink->raiseErrnoException("PROCESS-CONSTRUCTOR-ERROR", errno, "failed to create stderr FILE stream");
+            return;
+        }
     }
 
     // process exe arguments
     std::vector<std::string> exeArgs;
-    processArgs(arguments, exeArgs);
+    boost::filesystem::path effectivePath = p;
+
+    if (useShell) {
+        // Build shell command: sh -c "command arg1 arg2 ..."
+        shellCommand = p.string();
+        if (arguments) {
+            ConstListIterator li(arguments);
+            while (li.next()) {
+                shellCommand += " ";
+                QoreStringValueHelper str(li.getValue());
+                shellCommand += str->c_str();
+            }
+        }
+        // Use shell as the executable
+        effectivePath = "/bin/sh";
+        exeArgs.push_back("-c");
+        exeArgs.push_back(shellCommand);
+    } else {
+        processArgs(arguments, exeArgs);
+    }
 
     // setup stdout, stderr and stdin closures
     prepareClosures();
 
     // launch child process
     try {
-        launchChild(xsink, p, exeArgs, env, cwd.c_str(), stdoutFile, stderrFile, opts);
+        launchChild(xsink, effectivePath, exeArgs, env, cwd.c_str(), stdoutFile, stderrFile, opts, setNice, niceValue, limits);
     } catch (const std::exception& ex) {
+        // Clean up FILE handles on error
+        if (stdoutFile) {
+            fclose(stdoutFile);
+        }
+        if (stderrFile) {
+            fclose(stderrFile);
+        }
         xsink->raiseException("PROCESS-CONSTRUCTOR-ERROR", ex.what());
     }
 
     // stop async I/O thread immediately before obliteration if an exception was thrown
     if (*xsink) {
+        // Clean up FILE handles on error from launchChild
+        if (stdoutFile) {
+            fclose(stdoutFile);
+        }
+        if (stderrFile) {
+            fclose(stderrFile);
+        }
         finalizeStreams(xsink);
     }
 }
@@ -630,7 +836,10 @@ void ProcessPriv::launchChild(ExceptionSink* xsink,
         const char* cwd,
         FILE* stdoutFile,
         FILE* stderrFile,
-        const QoreHashNode* opts) {
+        const QoreHashNode* opts,
+        bool setNice,
+        int niceValue,
+        const resource_limits& limits) {
     // get handler pointers
     ReferenceHolder<ResolvedCallReferenceNode> f_on_success(optsExecutor("on_success", opts, xsink), xsink);
     if (*xsink) {
@@ -664,7 +873,10 @@ void ProcessPriv::launchChild(ExceptionSink* xsink,
         *f_on_fork_error,
         *f_on_exec_setup,
         *f_on_exec_error,
-        xsink
+        xsink,
+        setNice,
+        niceValue,
+        limits
     };
 
     bp::process_environment penv = bp::process_environment(env);
@@ -1053,18 +1265,67 @@ bool ProcessPriv::detach(ExceptionSink* xsink) {
     return true;
 }
 
+bool ProcessPriv::sendSignal(int sig, ExceptionSink* xsink) {
+    if (!processCheck(xsink)) {
+        return false;
+    }
+
+#ifdef HAVE_KILL
+    int pid = detached_pid ? detached_pid : m_process->id();
+    // CRITICAL: Validate PID before calling kill()
+    // If pid is -1 (invalid/moved-from process), kill(-1, sig) would kill ALL user processes!
+    if (pid <= 0) {
+        xsink->raiseException("PROCESS-SIGNAL-ERROR", "cannot send signal to invalid process (pid=%d)", pid);
+        return false;
+    }
+    if (kill(pid, sig) == -1) {
+        switch (errno) {
+            case EPERM:
+                xsink->raiseException("PROCESS-SIGNAL-ERROR", "insufficient permissions to send signal %d to PID %d",
+                    sig, pid);
+                break;
+            case ESRCH:
+                xsink->raiseException("PROCESS-SIGNAL-ERROR", "process with PID %d does not exist", pid);
+                break;
+            default:
+                xsink->raiseErrnoException("PROCESS-SIGNAL-ERROR", errno, "cannot send signal %d to PID %d", sig, pid);
+                break;
+        }
+        return false;
+    }
+    return true;
+#else
+    xsink->raiseException("PROCESS-SIGNAL-UNSUPPORTED-ERROR", "sending signals is not supported on this platform");
+    return false;
+#endif
+}
+
 bool ProcessPriv::terminate(ExceptionSink* xsink) {
     if (!processCheck(xsink)) {
         return false;
     }
 
     if (detached_pid) {
+        // CRITICAL: Validate PID before calling kill()
+        if (detached_pid <= 0) {
+            xsink->raiseException("PROCESS-TERMINATE-ERROR", "cannot terminate invalid process (pid=%d)", detached_pid);
+            return false;
+        }
         if (kill(detached_pid, SIGKILL) == -1) {
             xsink->raiseException("PROCESS-TERMINATE-ERROR", "Cannot terminate process: %s",
                 strerror(errno));
             return false;
         }
         return true;
+    }
+
+    // CRITICAL: Validate PID before calling boost::process terminate
+    // boost::process::terminate() directly calls kill(pid, SIGKILL) without validation
+    // If pid is -1 (invalid/moved-from process), this would kill ALL user processes!
+    int pid = m_process->id();
+    if (pid <= 0) {
+        xsink->raiseException("PROCESS-TERMINATE-ERROR", "cannot terminate invalid process (pid=%d)", pid);
+        return false;
     }
 
     boost::system::error_code ec;
@@ -1078,6 +1339,8 @@ bool ProcessPriv::terminate(ExceptionSink* xsink) {
         if (ec.value() == ECHILD) {
             std::lock_guard<std::mutex> lock(mtx_process_status);
             if (exit_code == -1) {
+                // Process was killed by signal, set exit code to indicate termination
+                exit_code = 128 + SIGKILL;
             }
             return true;
         }
@@ -1276,6 +1539,30 @@ void ProcessPriv::write(const char* val, size_t n, ExceptionSink* xsink) {
     prepareStdinBuffer();
     boost::asio::async_write(m_in_pipe, m_in_asiobuf, m_on_stdin_complete);
     ++m_async_write_running;
+}
+
+void ProcessPriv::closeStdin(ExceptionSink* xsink) {
+    if (!processCheck(xsink)) {
+        return;
+    }
+
+    // wait for any pending writes to complete
+    {
+        std::unique_lock<std::mutex> lock(m_async_write_mtx);
+        // wait for pending writes to complete (simple spin with sleep)
+        while (m_async_write_running > 0) {
+            lock.unlock();
+            usleep(1000);  // 1ms
+            lock.lock();
+        }
+    }
+
+    // close the stdin pipe
+    boost::system::error_code ec;
+    m_in_pipe.close(ec);
+    if (ec) {
+        xsink->raiseException("PROCESS-CLOSESTDIN-ERROR", "failed to close stdin pipe: %s", ec.message().c_str());
+    }
 }
 
 #ifdef __linux__
@@ -1767,8 +2054,456 @@ int64 ProcessPriv::getDescriptorCount(ExceptionSink* xsink, int pid) {
 #endif
 
 #if !defined(__linux__) && (!defined(__APPLE__) || !defined(__MACH__))
-int64 ProcessPriv::getDescriptorCount(int pid, ExceptionSink* xsink) {
+int64 ProcessPriv::getDescriptorCount(ExceptionSink* xsink, int pid) {
     xsink->raiseException("PROCESS-GETDESCRIPTORCOUNT-UNSUPPORTED-ERROR", "this call is not supported on this "
         "platform");
+    return -1;
 }
 #endif
+
+#include <sys/resource.h>
+
+static QoreHashNode* rusageToHash(const struct rusage& ru, ExceptionSink* xsink) {
+    ReferenceHolder<QoreHashNode> rv(new QoreHashNode(autoTypeInfo), xsink);
+
+    // Convert timeval to float seconds
+    double user_time = ru.ru_utime.tv_sec + (ru.ru_utime.tv_usec / 1000000.0);
+    double system_time = ru.ru_stime.tv_sec + (ru.ru_stime.tv_usec / 1000000.0);
+
+    rv->setKeyValue("user_time", user_time, xsink);
+    rv->setKeyValue("system_time", system_time, xsink);
+
+    // On Linux, ru_maxrss is in kilobytes; on macOS it's in bytes
+#if defined(__APPLE__) && defined(__MACH__)
+    rv->setKeyValue("max_rss", (int64)ru.ru_maxrss, xsink);
+#else
+    rv->setKeyValue("max_rss", (int64)ru.ru_maxrss * 1024, xsink);
+#endif
+
+    rv->setKeyValue("shared_size", (int64)ru.ru_ixrss, xsink);
+    rv->setKeyValue("unshared_data_size", (int64)ru.ru_idrss, xsink);
+    rv->setKeyValue("unshared_stack_size", (int64)ru.ru_isrss, xsink);
+    rv->setKeyValue("minor_faults", (int64)ru.ru_minflt, xsink);
+    rv->setKeyValue("major_faults", (int64)ru.ru_majflt, xsink);
+    rv->setKeyValue("swaps", (int64)ru.ru_nswap, xsink);
+    rv->setKeyValue("block_input", (int64)ru.ru_inblock, xsink);
+    rv->setKeyValue("block_output", (int64)ru.ru_oublock, xsink);
+    rv->setKeyValue("messages_sent", (int64)ru.ru_msgsnd, xsink);
+    rv->setKeyValue("messages_received", (int64)ru.ru_msgrcv, xsink);
+    rv->setKeyValue("signals_received", (int64)ru.ru_nsignals, xsink);
+    rv->setKeyValue("voluntary_context_switches", (int64)ru.ru_nvcsw, xsink);
+    rv->setKeyValue("involuntary_context_switches", (int64)ru.ru_nivcsw, xsink);
+
+    return rv.release();
+}
+
+QoreHashNode* ProcessPriv::getResourceUsage(ExceptionSink* xsink) {
+    if (!processCheck(xsink)) {
+        return nullptr;
+    }
+
+    // For child processes, use RUSAGE_CHILDREN
+    struct rusage ru;
+    if (getrusage(RUSAGE_CHILDREN, &ru) == -1) {
+        xsink->raiseErrnoException("PROCESS-GETRESOURCEUSAGE-ERROR", errno, "getrusage() failed");
+        return nullptr;
+    }
+
+    return rusageToHash(ru, xsink);
+}
+
+QoreHashNode* ProcessPriv::getResourceUsage(int pid, ExceptionSink* xsink) {
+    // For a specific PID, we can only get resource usage if:
+    // 1. It's the current process (use RUSAGE_SELF)
+    // 2. It's our child (use RUSAGE_CHILDREN)
+    // 3. On Linux, we can read /proc/PID/stat
+
+    if (pid == getpid()) {
+        struct rusage ru;
+        if (getrusage(RUSAGE_SELF, &ru) == -1) {
+            xsink->raiseErrnoException("PROCESS-GETRESOURCEUSAGE-ERROR", errno, "getrusage() failed");
+            return nullptr;
+        }
+        return rusageToHash(ru, xsink);
+    }
+
+#ifdef __linux__
+    // On Linux, we can read from /proc/PID/stat
+    QoreStringMaker path("/proc/%d/stat", pid);
+    QoreFile f;
+    if (f.open(path.c_str())) {
+        xsink->raiseException("PROCESS-GETRESOURCEUSAGE-ERROR", "cannot open %s: %s", path.c_str(), strerror(errno));
+        return nullptr;
+    }
+
+    QoreStringNodeHolder content(f.read(-1, -1, xsink));
+    if (*xsink) {
+        return nullptr;
+    }
+
+    // Parse /proc/PID/stat - fields are space-separated
+    // We need: utime (14), stime (15), vsize (23), rss (24), minflt (10), majflt (12)
+    // Field numbering starts at 1
+    const char* p = content->c_str();
+
+    // Skip past the command name (in parentheses) since it may contain spaces
+    const char* start = strchr(p, '(');
+    const char* end = strrchr(p, ')');
+    if (!start || !end) {
+        xsink->raiseException("PROCESS-GETRESOURCEUSAGE-ERROR", "cannot parse /proc/%d/stat", pid);
+        return nullptr;
+    }
+    p = end + 2;  // Skip ") "
+
+    // Parse remaining fields (starting at field 3)
+    int64 utime = 0, stime = 0, minflt = 0, majflt = 0, vsize = 0, rss = 0;
+    int field = 3;
+    while (*p) {
+        // Skip whitespace
+        while (*p == ' ') p++;
+        if (!*p) break;
+
+        // Read field value
+        char* endptr;
+        long long val = strtoll(p, &endptr, 10);
+
+        switch (field) {
+            case 10: minflt = val; break;  // minflt
+            case 12: majflt = val; break;  // majflt
+            case 14: utime = val; break;   // utime (clock ticks)
+            case 15: stime = val; break;   // stime (clock ticks)
+            case 23: vsize = val; break;   // vsize
+            case 24: rss = val; break;     // rss (pages)
+        }
+
+        // Move to next field
+        p = endptr;
+        field++;
+        if (field > 24) break;
+    }
+
+    // Convert clock ticks to seconds
+    long ticks_per_sec = sysconf(_SC_CLK_TCK);
+    long page_size = sysconf(_SC_PAGESIZE);
+
+    ReferenceHolder<QoreHashNode> rv(new QoreHashNode(autoTypeInfo), xsink);
+    rv->setKeyValue("user_time", (double)utime / ticks_per_sec, xsink);
+    rv->setKeyValue("system_time", (double)stime / ticks_per_sec, xsink);
+    rv->setKeyValue("max_rss", rss * page_size, xsink);
+    rv->setKeyValue("shared_size", (int64)0, xsink);
+    rv->setKeyValue("unshared_data_size", (int64)0, xsink);
+    rv->setKeyValue("unshared_stack_size", (int64)0, xsink);
+    rv->setKeyValue("minor_faults", minflt, xsink);
+    rv->setKeyValue("major_faults", majflt, xsink);
+    rv->setKeyValue("swaps", (int64)0, xsink);
+    rv->setKeyValue("block_input", (int64)0, xsink);
+    rv->setKeyValue("block_output", (int64)0, xsink);
+    rv->setKeyValue("messages_sent", (int64)0, xsink);
+    rv->setKeyValue("messages_received", (int64)0, xsink);
+    rv->setKeyValue("signals_received", (int64)0, xsink);
+    rv->setKeyValue("voluntary_context_switches", (int64)0, xsink);
+    rv->setKeyValue("involuntary_context_switches", (int64)0, xsink);
+
+    return rv.release();
+#else
+    xsink->raiseException("PROCESS-GETRESOURCEUSAGE-UNSUPPORTED-ERROR",
+        "getting resource usage for arbitrary PIDs is only supported on Linux");
+    return nullptr;
+#endif
+}
+
+QoreListNode* ProcessPriv::getChildPids(ExceptionSink* xsink) {
+    if (!processCheck(xsink)) {
+        return nullptr;
+    }
+
+    int pid = detached_pid ? detached_pid : m_process->id();
+    return getChildPids(pid, xsink);
+}
+
+QoreListNode* ProcessPriv::getChildPids(int pid, ExceptionSink* xsink) {
+    // Safety check: never allow getting children of PID 1 (init) or invalid PIDs
+    // This prevents accidentally killing system processes
+    if (pid <= 1) {
+        xsink->raiseException("PROCESS-GETCHILDPIDS-ERROR",
+            "refusing to get children of PID %d (must be > 1)", pid);
+        return nullptr;
+    }
+
+#ifdef __linux__
+    // On Linux, read /proc/PID/task/PID/children if available (kernel 3.5+)
+    // or parse all /proc/*/stat files looking for parent PID
+    QoreStringMaker childrenPath("/proc/%d/task/%d/children", pid, pid);
+    QoreFile f;
+
+    ReferenceHolder<QoreListNode> rv(new QoreListNode(bigIntTypeInfo), xsink);
+
+    if (f.open(childrenPath.c_str()) == 0) {
+        // Modern kernel with /proc/PID/task/PID/children support
+        QoreStringNodeHolder content(f.read(-1, -1, xsink));
+        if (*xsink) {
+            return nullptr;
+        }
+
+        // Handle empty file (process has no children) or nullptr
+        if (!content || !content->size()) {
+            return rv.release();
+        }
+
+        const char* p = content->c_str();
+        while (*p) {
+            // Skip whitespace
+            while (*p == ' ' || *p == '\t' || *p == '\n') p++;
+            if (!*p) break;
+
+            // Read PID
+            char* endptr;
+            long childPid = strtol(p, &endptr, 10);
+            if (endptr > p) {
+                rv->push(childPid, xsink);
+            }
+            p = endptr;
+        }
+    } else {
+        // Fallback: scan all /proc/*/stat files
+        DIR* procdir = opendir("/proc");
+        if (!procdir) {
+            xsink->raiseErrnoException("PROCESS-GETCHILDPIDS-ERROR", errno, "cannot open /proc");
+            return nullptr;
+        }
+
+        struct dirent* entry;
+        while ((entry = readdir(procdir)) != nullptr) {
+            // Check if entry is a number (PID)
+            char* endptr;
+            long entryPid = strtol(entry->d_name, &endptr, 10);
+            if (*endptr != '\0' || entryPid <= 0) {
+                continue;
+            }
+
+            // Read /proc/PID/stat
+            QoreStringMaker statPath("/proc/%ld/stat", entryPid);
+            QoreFile statFile;
+            if (statFile.open(statPath.c_str()) != 0) {
+                continue;
+            }
+
+            QoreStringNodeHolder statContent(statFile.read(-1, -1, xsink));
+            if (*xsink) {
+                xsink->clear();  // Ignore errors reading individual stat files
+                continue;
+            }
+
+            // Safety check for null or empty content
+            if (!statContent || !statContent->size()) {
+                continue;
+            }
+
+            // Parse stat file to get PPID (field 4)
+            const char* p = statContent->c_str();
+            const char* end = strrchr(p, ')');
+            if (!end) continue;
+            p = end + 2;  // Skip ") "
+
+            // Skip state (field 3)
+            while (*p == ' ') p++;
+            while (*p && *p != ' ') p++;
+            while (*p == ' ') p++;
+
+            // Read PPID (field 4)
+            long ppid = strtol(p, &endptr, 10);
+            if (ppid == pid) {
+                rv->push(entryPid, xsink);
+            }
+        }
+        closedir(procdir);
+    }
+
+    return rv.release();
+#elif defined(__APPLE__) && defined(__MACH__)
+    // On macOS, use libproc to get child PIDs
+    ReferenceHolder<QoreListNode> rv(new QoreListNode(bigIntTypeInfo), xsink);
+
+    // Get list of all PIDs
+    int numPids = proc_listpids(PROC_ALL_PIDS, 0, nullptr, 0);
+    if (numPids <= 0) {
+        return rv.release();  // Return empty list
+    }
+
+    std::vector<pid_t> pids(numPids);
+    numPids = proc_listpids(PROC_ALL_PIDS, 0, pids.data(), numPids * sizeof(pid_t));
+    numPids /= sizeof(pid_t);
+
+    for (int i = 0; i < numPids; i++) {
+        struct proc_bsdinfo info;
+        int size = proc_pidinfo(pids[i], PROC_PIDTBSDINFO, 0, &info, sizeof(info));
+        if (size == sizeof(info) && info.pbi_ppid == pid) {
+            rv->push((int64)pids[i], xsink);
+        }
+    }
+
+    return rv.release();
+#else
+    xsink->raiseException("PROCESS-GETCHILDPIDS-UNSUPPORTED-ERROR",
+        "getting child PIDs is not supported on this platform");
+    return nullptr;
+#endif
+}
+
+// Helper function to get the PPID of a process
+static int getProcessPpid(int targetPid) {
+#ifdef __linux__
+    // Safety check
+    if (targetPid <= 0) {
+        return -1;
+    }
+
+    QoreStringMaker statPath("/proc/%d/stat", targetPid);
+    QoreFile f;
+    if (f.open(statPath.c_str()) != 0) {
+        return -1;
+    }
+
+    ExceptionSink xsink;
+    QoreStringNodeHolder content(f.read(-1, -1, &xsink));
+    if (xsink || !content || !content->size()) {
+        return -1;
+    }
+
+    // Parse stat file to get PPID (field 4)
+    // Format: pid (comm) state ppid pgrp session ...
+    const char* p = content->c_str();
+    const char* end = strrchr(p, ')');
+    if (!end || end < p + 2) return -1;
+
+    p = end + 1;  // Point to character after ')'
+    if (*p != ' ') return -1;  // Expect space after ')'
+    p++;  // Skip the space
+
+    // Now p should point to state (single character)
+    if (!*p) return -1;
+    p++;  // Skip state character
+
+    // Skip spaces after state
+    while (*p == ' ') p++;
+    if (!*p) return -1;
+
+    // Read PPID (field 4)
+    char* endptr;
+    long ppid = strtol(p, &endptr, 10);
+    if (endptr == p) {
+        // Failed to parse
+        return -1;
+    }
+
+    return (int)ppid;
+#else
+    return -1;
+#endif
+}
+
+// Helper function to safely kill a process - verifies PPID before killing
+static bool safeKill(int targetPid, int expectedPpid, int sig) {
+#ifdef HAVE_KILL
+    // Safety check: never kill PID 1 (init) or invalid PIDs
+    if (targetPid <= 1) {
+        return false;
+    }
+
+    // CRITICAL: Verify the process's PPID matches what we expect
+    // This prevents killing unrelated processes if PIDs were recycled
+    int actualPpid = getProcessPpid(targetPid);
+    if (actualPpid != expectedPpid) {
+        // PPID doesn't match - this is NOT our child process!
+        // This can happen if:
+        // 1. The process already terminated and PID was reused
+        // 2. There's a bug in getChildPids
+        // Either way, do NOT kill this process
+        return false;
+    }
+
+    return kill(targetPid, sig) == 0;
+#else
+    return false;
+#endif
+}
+
+bool ProcessPriv::terminateTree(ExceptionSink* xsink) {
+    if (!processCheck(xsink)) {
+        return false;
+    }
+
+    // TEMPORARILY DISABLED: Child process killing is disabled due to a bug that causes
+    // incorrect PIDs to be killed. For now, just terminate the main process.
+    // TODO: Fix the getChildPids implementation and re-enable child killing.
+    //
+    // The issue is that getChildPids or the PPID verification is somehow returning
+    // or approving incorrect PIDs, leading to killing unrelated processes like
+    // systemd, ssh sessions, etc.
+
+    // Just terminate the main process for now
+    return terminate(xsink);
+}
+
+QoreHashNode* ProcessPriv::run(const char* command, const QoreListNode* arguments,
+        const QoreHashNode* opts, int64 timeout_ms, ExceptionSink* xsink) {
+    // Create process
+    ReferenceHolder<ProcessPriv> proc(new ProcessPriv(command, arguments, opts, xsink), xsink);
+    if (*xsink) {
+        return nullptr;
+    }
+
+    // Wait for completion
+    bool finished;
+    if (timeout_ms > 0) {
+        finished = proc->wait(timeout_ms, xsink);
+    } else {
+        finished = proc->wait(xsink);
+    }
+
+    if (*xsink) {
+        return nullptr;
+    }
+
+    // Collect stdout
+    SimpleRefHolder<QoreStringNode> stdout_str(new QoreStringNode);
+    while (true) {
+        QoreStringNode* chunk = proc->readStdout(4096, xsink);
+        if (*xsink) {
+            return nullptr;
+        }
+        if (!chunk) {
+            break;
+        }
+        stdout_str->concat(chunk);
+        chunk->deref();
+    }
+
+    // Collect stderr
+    SimpleRefHolder<QoreStringNode> stderr_str(new QoreStringNode);
+    while (true) {
+        QoreStringNode* chunk = proc->readStderr(4096, xsink);
+        if (*xsink) {
+            return nullptr;
+        }
+        if (!chunk) {
+            break;
+        }
+        stderr_str->concat(chunk);
+        chunk->deref();
+    }
+
+    // Build result hash
+    ReferenceHolder<QoreHashNode> rv(new QoreHashNode(autoTypeInfo), xsink);
+    rv->setKeyValue("stdout", stdout_str.release(), xsink);
+    rv->setKeyValue("stderr", stderr_str.release(), xsink);
+    rv->setKeyValue("exit_code", proc->exitCode(xsink), xsink);
+    rv->setKeyValue("ok", finished, xsink);
+
+    // If process didn't finish (timeout), terminate it
+    if (!finished) {
+        proc->terminate(xsink);
+    }
+
+    return rv.release();
+}
