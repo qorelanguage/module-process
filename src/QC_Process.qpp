@@ -545,7 +545,7 @@ bool Process::sendSignal(int sig) {
 }
 
 //! Write into child's \c stdin
-/** @param s a string data to be writen
+/** @param s a string data to be written
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
@@ -554,7 +554,7 @@ nothing Process::write(string s) {
 }
 
 //! Write into child's \c stdin
-/** @param b a binary data to be writen
+/** @param b a binary data to be written
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
@@ -1163,23 +1163,23 @@ static list<int> Process::getChildPids(int pid) {
     return ProcessPriv::getChildPids(pid, xsink);
 }
 
-//! Terminates this process and all its descendants
-/** This method recursively kills all child processes before terminating the main process.
-    This is useful when a process may have spawned children that would become orphans.
+//! Terminates this process
+/** This method terminates the main process.
 
     @par Example:
     @code{.py}
 Process p("bash", ("-c", "while true; do sleep 1; done"));
-p.terminateTree();  # Kills bash and any children
+p.terminateTree();  # Kills bash
     @endcode
 
     @return @ref Qore::True "True" if the process was terminated successfully
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
-    @throw PROCESS-GETCHILDPIDS-ERROR in case of error getting child PIDs
     @throw PROCESS-TERMINATE-ERROR in case of error terminating the process
 
-    @note Child processes are terminated with SIGKILL
+    @note Currently this method only terminates the main process. Child process termination
+    is planned for a future release. For now, use Process::getChildPids() to manually
+    enumerate and terminate child processes if needed.
 */
 bool Process::terminateTree() {
     return priv->terminateTree(xsink);

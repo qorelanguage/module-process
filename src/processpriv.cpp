@@ -328,34 +328,29 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
         }
         const QoreHashNode* limitsHash = n.get<const QoreHashNode>();
 
-        if (limitsHash->existsKey("memory")) {
-            limits.hasMemory = true;
-            limits.memory = (rlim_t)limitsHash->getKeyValue("memory").getAsBigInt();
-        }
-        if (limitsHash->existsKey("data")) {
-            limits.hasData = true;
-            limits.data = (rlim_t)limitsHash->getKeyValue("data").getAsBigInt();
-        }
-        if (limitsHash->existsKey("stack")) {
-            limits.hasStack = true;
-            limits.stack = (rlim_t)limitsHash->getKeyValue("stack").getAsBigInt();
-        }
-        if (limitsHash->existsKey("core")) {
-            limits.hasCore = true;
-            limits.core = (rlim_t)limitsHash->getKeyValue("core").getAsBigInt();
-        }
-        if (limitsHash->existsKey("cpu")) {
-            limits.hasCpu = true;
-            limits.cpu = (rlim_t)limitsHash->getKeyValue("cpu").getAsBigInt();
-        }
-        if (limitsHash->existsKey("files")) {
-            limits.hasFiles = true;
-            limits.files = (rlim_t)limitsHash->getKeyValue("files").getAsBigInt();
-        }
-        if (limitsHash->existsKey("processes")) {
-            limits.hasProcesses = true;
-            limits.processes = (rlim_t)limitsHash->getKeyValue("processes").getAsBigInt();
-        }
+        // Helper lambda to get and validate limit values
+        auto getLimit = [&](const char* key, bool& hasFlag, rlim_t& value) -> bool {
+            if (limitsHash->existsKey(key)) {
+                int64 v = limitsHash->getKeyValue(key).getAsBigInt();
+                if (v < 0) {
+                    xsink->raiseException("PROCESS-OPTION-ERROR",
+                        "Process option 'limits.%s' must be a non-negative integer (got " QLLD ")",
+                        key, v);
+                    return false;
+                }
+                hasFlag = true;
+                value = static_cast<rlim_t>(v);
+            }
+            return true;
+        };
+
+        if (!getLimit("memory", limits.hasMemory, limits.memory)) return;
+        if (!getLimit("data", limits.hasData, limits.data)) return;
+        if (!getLimit("stack", limits.hasStack, limits.stack)) return;
+        if (!getLimit("core", limits.hasCore, limits.core)) return;
+        if (!getLimit("cpu", limits.hasCpu, limits.cpu)) return;
+        if (!getLimit("files", limits.hasFiles, limits.files)) return;
+        if (!getLimit("processes", limits.hasProcesses, limits.processes)) return;
     }
 
     // not yet supported; not possible to read from an input stream with a timeout or to read all data available
@@ -422,16 +417,18 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
         // Clean up FILE handles on error
         if (stdoutFile) {
             fclose(stdoutFile);
+            stdoutFile = nullptr;
         }
         if (stderrFile) {
             fclose(stderrFile);
+            stderrFile = nullptr;
         }
         xsink->raiseException("PROCESS-CONSTRUCTOR-ERROR", ex.what());
     }
 
     // stop async I/O thread immediately before obliteration if an exception was thrown
     if (*xsink) {
-        // Clean up FILE handles on error from launchChild
+        // Clean up FILE handles on error from launchChild (if not already closed)
         if (stdoutFile) {
             fclose(stdoutFile);
         }
