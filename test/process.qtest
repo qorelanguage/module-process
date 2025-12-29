@@ -893,12 +893,12 @@ public class Main inherits QUnit::Test {
             assertEq("SIGTERM received", output, "Signal handler should have printed message");
         }
 
-        # Test sending signal to non-existent process
+        # Test sending signal to already-terminated process
         {
-            assertThrows("PROCESS-SIGNAL-ERROR", sub () {
-                Process p(getpid());  # Attach to self (won't be able to kill)
-                p.sendSignal(9999999);  # Invalid PID after some manipulation
-            });
+            Process p(getTestValue("testTrue"), {"path": (m_prefix,)});
+            p.wait();  # Wait for process to exit
+            # Process has exited, sendSignal should fail
+            assertThrows("PROCESS-SIGNAL-ERROR", \p.sendSignal(), SIGTERM);
         }
     }
 
@@ -1189,16 +1189,16 @@ public class Main inherits QUnit::Test {
         # Test getResourceUsage() for current process
         {
             hash<auto> usage = Process::getResourceUsage();
-            assertGe(0.0, usage.user_time, "user_time should be >= 0");
-            assertGe(0.0, usage.system_time, "system_time should be >= 0");
-            assertGt(0, usage.max_rss, "max_rss should be > 0");
+            assertGe(usage.user_time, 0.0, "user_time should be >= 0");
+            assertGe(usage.system_time, 0.0, "system_time should be >= 0");
+            assertGt(usage.max_rss, 0, "max_rss should be > 0");
         }
 
         # Test getResourceUsage() for specific PID
         {
             hash<auto> usage = Process::getResourceUsage(getpid());
-            assertGe(0.0, usage.user_time, "user_time should be >= 0");
-            assertGt(0, usage.max_rss, "max_rss should be > 0");
+            assertGe(usage.user_time, 0.0, "user_time should be >= 0");
+            assertGt(usage.max_rss, 0, "max_rss should be > 0");
         }
 
         # Test getResourceUsage() for child process
@@ -1221,7 +1221,7 @@ public class Main inherits QUnit::Test {
 
             if (Qore::PlatformOS == "Linux" || Qore::PlatformOS == "Darwin") {
                 list<int> children = p.getChildPids();
-                assertGe(0, children.size(), "should have at least 0 children (timing dependent)");
+                assertGe(children.size(), 0, "should have at least 0 children (timing dependent)");
             }
 
             p.terminate();
