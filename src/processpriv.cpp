@@ -1271,8 +1271,11 @@ bool ProcessPriv::sendSignal(int sig, ExceptionSink* xsink) {
     int pid = detached_pid ? detached_pid : m_process->id();
     // CRITICAL: Validate PID before calling kill()
     // If pid is -1 (invalid/moved-from process), kill(-1, sig) would kill ALL user processes!
+    // pid=0 would send signal to all processes in the process group.
     if (pid <= 0) {
-        xsink->raiseException("PROCESS-SIGNAL-ERROR", "cannot send signal to invalid process (pid=%d)", pid);
+        xsink->raiseException("PROCESS-SIGNAL-ERROR",
+            "cannot send signal: PID must be positive (got %d); non-positive PIDs have special meanings to kill()",
+            pid);
         return false;
     }
     if (kill(pid, sig) == -1) {
@@ -2352,15 +2355,19 @@ bool ProcessPriv::terminateTree(ExceptionSink* xsink) {
         return false;
     }
 
+    // NOTE: Currently this method only terminates the main process and does NOT
+    // terminate any child processes. Its behavior is effectively the same as
+    // calling terminate(). Child process termination is temporarily disabled.
+    //
     // TEMPORARILY DISABLED: Child process killing is disabled due to a bug that causes
-    // incorrect PIDs to be killed. For now, just terminate the main process.
+    // incorrect PIDs to be killed.
     // TODO: Fix the getChildPids implementation and re-enable child killing.
     //
     // The issue is that getChildPids or the PPID verification is somehow returning
     // or approving incorrect PIDs, leading to killing unrelated processes like
     // systemd, ssh sessions, etc.
 
-    // Just terminate the main process for now
+    // Just terminate the main process for now; this is equivalent to terminate()
     return terminate(xsink);
 }
 

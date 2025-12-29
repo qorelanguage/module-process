@@ -1252,7 +1252,7 @@ public class Main inherits QUnit::Test {
     invalidProcessTests() {
         # Test sendSignal on already-terminated process
         {
-            Process p("true");
+            Process p(getTestValue("testTrue"), {"path": (m_prefix,)});
             p.wait();
             # Process is now dead, sendSignal should fail gracefully
             assertThrows("PROCESS-SIGNAL-ERROR", sub () {
@@ -1262,7 +1262,7 @@ public class Main inherits QUnit::Test {
 
         # Test terminate on already-terminated process
         {
-            Process p("true");
+            Process p(getTestValue("testTrue"), {"path": (m_prefix,)});
             p.wait();
             # Second terminate should handle gracefully (process already dead)
             try {
