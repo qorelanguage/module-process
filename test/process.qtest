@@ -1182,16 +1182,17 @@ public class Main inherits QUnit::Test {
         # Test getResourceUsage() for current process
         {
             hash<auto> usage = Process::getResourceUsage();
-            assertGe(usage.user_time, 0.0, "user_time should be >= 0");
-            assertGe(usage.system_time, 0.0, "system_time should be >= 0");
-            assertGt(usage.max_rss, 0, "max_rss should be > 0");
+            # Use assertTrue for comparisons since QUnit assert* have unusual argument order
+            assertTrue(usage.user_time >= 0.0, "user_time should be >= 0");
+            assertTrue(usage.system_time >= 0.0, "system_time should be >= 0");
+            assertTrue(usage.max_rss > 0, "max_rss should be > 0");
         }
 
         # Test getResourceUsage() for specific PID
         {
             hash<auto> usage = Process::getResourceUsage(getpid());
-            assertGe(usage.user_time, 0.0, "user_time should be >= 0");
-            assertGt(usage.max_rss, 0, "max_rss should be > 0");
+            assertTrue(usage.user_time >= 0.0, "user_time should be >= 0");
+            assertTrue(usage.max_rss > 0, "max_rss should be > 0");
         }
 
         # Test getResourceUsage() for child process
@@ -1311,10 +1312,10 @@ public class Main inherits QUnit::Test {
     pipelineTest() {
         # Test simple pipeline
         {
-            hash<auto> result = Process::pipeline(
+            hash<auto> result = Process::pipeline((
                 ("echo", "hello world"),
                 ("wc", "-w")
-            );
+            ));
             assertTrue(result.ok, "pipeline should succeed");
             assertEq(0, result.exit_code, "exit code should be 0");
             assertRegex("2", result.stdout, "word count should be 2");
@@ -1322,20 +1323,20 @@ public class Main inherits QUnit::Test {
 
         # Test multi-stage pipeline
         {
-            hash<auto> result = Process::pipeline(
+            hash<auto> result = Process::pipeline((
                 ("echo", "cherry\napple\nbanana"),
                 ("sort",),
                 ("head", "-1")
-            );
+            ));
             assertTrue(result.ok, "pipeline should succeed");
             assertRegex("apple", result.stdout, "first sorted line should be apple");
         }
 
         # Test single command (should work like run)
         {
-            hash<auto> result = Process::pipeline(
-                ("echo", "hello")
-            );
+            hash<auto> result = Process::pipeline((
+                ("echo", "hello"),
+            ));
             assertTrue(result.ok, "single command pipeline should succeed");
             assertRegex("hello", result.stdout, "output should contain hello");
         }

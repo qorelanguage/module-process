@@ -272,7 +272,6 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
         m_err_asiobuf(boost::asio::buffer(m_err_vec)) {
     // parse options
     env_t env = optsEnv(opts, xsink);
-    boost::filesystem::path p = optsPath(command, opts, xsink);
     std::string cwd = optsCwd(opts, xsink);
 
     if (xsink->isException()) {
@@ -290,11 +289,24 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
     }
 
     // Handle shell option - wrap command in sh -c
+    // Check this BEFORE optsPath since shell commands shouldn't be searched in PATH
     bool useShell = false;
     std::string shellCommand;
     if (opts && opts->existsKey("shell")) {
         QoreValue n = opts->getKeyValue("shell");
         useShell = n.getAsBool();
+    }
+
+    // Get executable path - skip PATH search if using shell
+    boost::filesystem::path p;
+    if (useShell) {
+        // When using shell, the command is passed to /bin/sh -c, not executed directly
+        p = command;
+    } else {
+        p = optsPath(command, opts, xsink);
+        if (xsink->isException()) {
+            return;
+        }
     }
 
     // Handle nice option
