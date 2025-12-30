@@ -100,6 +100,11 @@ process module.
 %doc docs/process test
 
 %changelog
+* Mon Dec 30 2025 David Nichols <david.nichols@qoretechnologies.com>
+- updated to boost 1.90 (includes exit-code fix for terminate + async_wait)
+- added PID validation to static Process::terminate(), Process::checkPid(),
+  and Process::waitForTermination() to prevent kill(-1) from killing all processes
+
 * Sun Dec 29 2025 David Nichols <david.nichols@qoretechnologies.com>
 - added sendSignal() method to send signals to processes
 - added closeStdin() method to close stdin pipe and signal EOF

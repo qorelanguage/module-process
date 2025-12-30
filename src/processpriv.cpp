@@ -1939,6 +1939,13 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfo(int pid, ExceptionSink* xsink) {
 
 bool ProcessPriv::checkPid(int pid, ExceptionSink* xsink) {
 #ifdef HAVE_KILL
+    // CRITICAL: Validate PID before calling kill()
+    // pid <= 0 has special meanings to kill() and must be rejected
+    if (pid <= 0) {
+        xsink->raiseException("PROCESS-CHECKPID-ERROR",
+            "cannot check invalid PID: PID must be positive (got %d)", pid);
+        return false;
+    }
     return !kill(pid, 0);
 #else
     xsink->raiseException("PROCESS-CHECKPID-UNSUPPORTED-ERROR", "this call is not supported on this platform");
@@ -1956,6 +1963,17 @@ bool ProcessPriv::checkPid(int pid, ExceptionSink* xsink) {
 
 void ProcessPriv::terminate(int pid, ExceptionSink* xsink) {
 #ifdef HAVE_KILL
+    // CRITICAL: Validate PID before calling kill()
+    // If pid <= 0, kill() has special meanings:
+    //   pid = -1: kill ALL processes we can signal (CATASTROPHIC!)
+    //   pid = 0: kill all processes in our process group
+    //   pid < -1: kill all processes in process group |pid|
+    if (pid <= 0) {
+        xsink->raiseException("PROCESS-TERMINATE-ERROR",
+            "cannot terminate invalid process: PID must be positive (got %d); "
+            "non-positive PIDs have special meanings to kill()", pid);
+        return;
+    }
     if (kill(pid, SIGKILL)) {
         switch (errno) {
             case EPERM:
@@ -1984,6 +2002,13 @@ void ProcessPriv::terminate(int pid, ExceptionSink* xsink) {
 
 void ProcessPriv::waitForTermination(int pid, ExceptionSink* xsink) {
 #ifdef HAVE_KILL
+    // CRITICAL: Validate PID before calling kill()
+    // pid <= 0 has special meanings to kill() and must be rejected
+    if (pid <= 0) {
+        xsink->raiseException("PROCESS-WAITFORTERMINATION-ERROR",
+            "cannot wait for invalid PID: PID must be positive (got %d)", pid);
+        return;
+    }
     while (true) {
         if (kill(pid, 0)) {
             break;

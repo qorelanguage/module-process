@@ -973,7 +973,7 @@ public class Main inherits QUnit::Test {
         }
 
         # Test Process::terminate() with invalid PID
-        assertThrows("PROCESS-INVALID-PID", \Process::terminate(), -1);
+        assertThrows("PROCESS-TERMINATE-ERROR", \Process::terminate(), -1);
 
         # Test invalid encoding option type
         assertThrows("PROCESS-OPTION-ERROR", sub () {
