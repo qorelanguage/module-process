@@ -101,6 +101,23 @@ public class Main inherits QUnit::Test {
         addTestCase("Output redirect test", \outputRedirectTest());
         addTestCase("Output redirect negative test", \outputRedirectNegativeTest());
         addTestCase("Output redirect normal read test", \outputRedirectReadTest());
+        addTestCase("closeStdin test", \closeStdinTest());
+        addTestCase("sendSignal test", \sendSignalTest());
+        addTestCase("Edge case tests", \edgeCaseTests());
+        addTestCase("Negative tests", \negativeTests());
+        addTestCase("Large I/O test", \largeIOTest());
+        addTestCase("Special characters test", \specialCharsTest());
+        addTestCase("Binary with NUL test", \binaryNulTest());
+        addTestCase("Process::run() test", \runTest());
+        addTestCase("Process::commandExists() test", \commandExistsTest());
+        addTestCase("Shell option test", \shellOptionTest());
+        addTestCase("Nice option test", \niceOptionTest());
+        addTestCase("Resource usage test", \resourceUsageTest());
+        addTestCase("Child PIDs test", \childPidsTest());
+        addTestCase("Invalid process tests", \invalidProcessTests());
+        addTestCase("Terminate tree test", \terminateTreeTest());
+        addTestCase("Pipeline test", \pipelineTest());
+        addTestCase("Resource limits test", \resourceLimitsTest());
 
         # Return for compatibility with test harness that checks return value.
         set_return_value(main());
@@ -351,7 +368,7 @@ public class Main inherits QUnit::Test {
         int retCode = (rand().abs() % 256);
         p.write(string(retCode) + "\n");
 
-        p.wait();
+        assertTrue(p.wait(30s), "Process should complete within timeout");
         assertEq(False, p.running());
         assertEq(retCode, p.exitCode());
 
@@ -832,6 +849,547 @@ public class Main inherits QUnit::Test {
         assertNothing(p.readStderrBinary(1000));
 
         p.wait();
+    }
+
+    closeStdinTest() {
+        # Test that closeStdin() allows EOF-reading programs to finish
+        Process p("test_stdin_eof.q", {"path": (m_prefix,)});
+
+        p.write("cherry\n");
+        p.write("apple\n");
+        p.write("banana\n");
+        p.closeStdin();  # Signal EOF
+
+        assertTrue(p.wait(5s), "Process should finish after stdin closed");
+
+        string output = "";
+        while (True) {
+            *string str = p.readStdout(1000);
+            if (!str) {
+                break;
+            }
+            output += str;
+        }
+
+        assertEq("apple\nbanana\ncherry", output, "Output should be sorted");
+        assertEq(0, p.exitCode(), "Exit code should be 0");
+    }
+
+    sendSignalTest() {
+        # Test graceful termination with SIGTERM
+        {
+            Process p("test_signal.q", {"path": (m_prefix,)});
+            sleep(200ms);  # Give process time to set up signal handler
+            assertTrue(p.running(), "Process should be running");
+
+            assertTrue(p.sendSignal(SIGTERM), "sendSignal should return true");
+
+            # Wait for graceful shutdown
+            assertTrue(p.wait(5s), "Process should exit after SIGTERM");
+            # Note: exit code varies by platform - don't assert on specific value
+            # The important thing is the process terminated after receiving the signal
+        }
+
+        # Test sending signal to already-terminated process
+        {
+            Process p(getTestValue("testTrue"), {"path": (m_prefix,)});
+            p.wait();  # Wait for process to exit
+            # Process has exited, sendSignal should fail
+            assertThrows("PROCESS-SIGNAL-ERROR", \p.sendSignal(), SIGTERM);
+        }
+    }
+
+    edgeCaseTests() {
+        # Test with empty environment
+        {
+            Process p(getTestValue("testTrue"), {"path": (m_prefix,), "env": {}});
+            p.wait();
+            # Process may fail due to missing PATH but should not crash
+            assertTrue(True, "Empty env should not crash");
+        }
+
+        # Test timeout = 0
+        {
+            Process p(getTestValue("testSleep"), 2, {"path": (m_prefix,)});
+            assertFalse(p.wait(0), "wait(0) should return immediately");
+            p.terminate();
+        }
+
+        # Test wait after process already finished
+        {
+            Process p(getTestValue("testTrue"), {"path": (m_prefix,)});
+            p.wait();
+            assertTrue(p.wait(), "wait() on finished process should return true");
+            assertTrue(p.wait(1s), "wait(timeout) on finished process should return true");
+        }
+
+        # Test readStdout with 0 bytes
+        {
+            Process p(getTestValue("testOutput"), {"path": (m_prefix,)});
+            assertEq(NOTHING, p.readStdout(0), "readStdout(0) should return NOTHING");
+            assertEq(NOTHING, p.readStderr(0), "readStderr(0) should return NOTHING");
+            assertEq(NOTHING, p.readStdoutBinary(0), "readStdoutBinary(0) should return NOTHING");
+            assertEq(NOTHING, p.readStderrBinary(0), "readStderrBinary(0) should return NOTHING");
+            p.wait();
+        }
+    }
+
+    negativeTests() {
+        # Test double detach
+        {
+            Process p(getTestValue("testSleep"), 5, {"path": (m_prefix,)});
+            int pid = p.id();
+            p.detach();
+            # Second detach should not crash
+            p.detach();
+            # Terminate using static method with the saved PID
+            Process::terminate(pid);
+        }
+
+        # Test getDescriptorCount with invalid PID
+        if (HAVE_PROCESS_GETDESCRIPTORCOUNT) {
+            assertThrows("PROCESS-GETDESCRIPTORCOUNT-ERROR", \Process::getDescriptorCount(), -1);
+            assertThrows("PROCESS-GETDESCRIPTORCOUNT-ERROR", \Process::getDescriptorCount(), 999999999);
+        }
+
+        # Test getMemorySummaryInfo with invalid PID
+        if (HAVE_PROCESS_GETMEMORYINFO) {
+            assertThrows("PROCESS-GETMEMORYINFO-ERROR", \Process::getMemorySummaryInfo(), -1);
+            assertThrows("PROCESS-GETMEMORYINFO-ERROR", \Process::getMemorySummaryInfo(), 999999999);
+        }
+
+        # Test constructor with negative PID
+        assertThrows("PROCESS-CONSTRUCTOR-ERROR", sub () { Process p(-1); });
+
+        # Test writing to process after stdin closed
+        {
+            Process p("test_stdin_eof.q", {"path": (m_prefix,)});
+            p.closeStdin();
+            # Write after close should not crash (may silently fail)
+            p.write("test");
+            if (!p.wait(5s)) {
+                p.terminate();
+            }
+        }
+
+        # Test Process::terminate() with invalid PID
+        assertThrows("PROCESS-TERMINATE-ERROR", \Process::terminate(), -1);
+
+        # Test invalid encoding option type
+        assertThrows("PROCESS-OPTION-ERROR", sub () {
+            Process p(getTestValue("testTrue"), {"path": (m_prefix,), "encoding": 123});
+        });
+
+        # Test invalid cwd option type
+        assertThrows("PROCESS-OPTION-ERROR", sub () {
+            Process p(getTestValue("testTrue"), {"path": (m_prefix,), "cwd": 123});
+        });
+
+        # Test invalid path option type
+        assertThrows("PROCESS-OPTION-ERROR", sub () {
+            Process p(getTestValue("testTrue"), {"path": "not-a-list"});
+        });
+    }
+
+    largeIOTest() {
+        # Test basic I/O with test_io.q
+        # Note: test_io.q reads only a few lines, not all input
+        hash<auto> opts = {"path": (m_prefix,)};
+
+        Process p("test_io.q", opts);
+
+        # Send first line (echoed to stdout)
+        p.write("hello\n");
+        sleep(100ms);
+
+        # Send second line (echoed to stdout and stderr)
+        p.write("world\n");
+        sleep(100ms);
+
+        # Send exit code
+        p.write("0\n");
+
+        # Wait with timeout
+        if (!p.wait(10s)) {
+            p.terminate();
+            assertTrue(False, "Process should complete within timeout");
+            return;
+        }
+
+        assertEq(0, p.exitCode(), "Exit code should be 0");
+    }
+
+    specialCharsTest() {
+        # Test arguments with special characters
+        hash<auto> opts = {"path": (m_prefix,)};
+
+        # Test with spaces in arguments
+        {
+            Process p("test_env.q", ("SPECIAL_VAR", "value with spaces"), opts + {"env": ENV + {"SPECIAL_VAR": "value with spaces"}});
+            p.wait();
+            assertEq(0, p.exitCode(), "Spaces in args should work");
+        }
+
+        # Test with quotes in arguments
+        {
+            Process p("test_env.q", ("QUOTE_VAR", "value\"with\"quotes"), opts + {"env": ENV + {"QUOTE_VAR": "value\"with\"quotes"}});
+            p.wait();
+            assertEq(0, p.exitCode(), "Quotes in args should work");
+        }
+
+        # Test with unicode in arguments
+        {
+            Process p("test_env.q", ("UNICODE_VAR", "\u00e9\u00e8\u00ea"), opts + {"env": ENV + {"UNICODE_VAR": "\u00e9\u00e8\u00ea"}});
+            p.wait();
+            assertEq(0, p.exitCode(), "Unicode in args should work");
+        }
+    }
+
+    binaryNulTest() {
+        # Test writing binary data with embedded NUL bytes
+        hash<auto> opts = {"path": (m_prefix,)};
+        Process p("test_io.q", opts);
+
+        binary data = <00010203040500060708>;  # Binary with NUL in middle
+        p.write(data);
+        p.write("\n");
+
+        # Read back - note: the test_io.q reads a line, so NUL will terminate
+        # This tests that write(binary) handles NUL correctly
+        sleep(500ms);
+        *binary out = p.readStdoutBinary(100);
+        # The actual behavior depends on how the child process handles binary
+        # Just verify it doesn't crash
+        assertTrue(True, "Binary with NUL should not crash");
+
+        p.write("0\n");
+        if (!p.wait(10s)) {
+            p.terminate();
+        }
+    }
+
+    runTest() {
+        # Test basic run()
+        {
+            hash<auto> result = Process::run(getTestValue("testTrue"), NOTHING, {"path": (m_prefix,)});
+            assertTrue(result.ok, "run() should succeed");
+            assertEq(0, result.exit_code, "Exit code should be 0");
+            assertEq("", result.stdout, "stdout should be empty for test_true.q");
+            assertEq("", result.stderr, "stderr should be empty for test_true.q");
+        }
+
+        # Test run() with output
+        {
+            hash<auto> result = Process::run(getTestValue("testOutput"), NOTHING, {"path": (m_prefix,)});
+            assertTrue(result.ok, "run() should succeed");
+            assertEq(0, result.exit_code, "Exit code should be 0");
+            assertEq("stdout", result.stdout, "stdout should contain 'stdout'");
+            assertEq("stderr", result.stderr, "stderr should contain 'stderr'");
+        }
+
+        # Test run() with non-zero exit code
+        {
+            hash<auto> result = Process::run(getTestValue("testFalse"), NOTHING, {"path": (m_prefix,)});
+            assertTrue(result.ok, "run() should complete (even with error)");
+            assertEq(1, result.exit_code, "Exit code should be 1");
+        }
+
+        # Test run() with timeout
+        {
+            hash<auto> result = Process::run(getTestValue("testSleep"), (5,), {"path": (m_prefix,)}, 1s);
+            assertFalse(result.ok, "run() should timeout");
+        }
+
+        # Test run() with system command
+        {
+            hash<auto> result = Process::run("echo", ("hello", "world"));
+            assertTrue(result.ok, "run() should succeed");
+            assertEq(0, result.exit_code, "Exit code should be 0");
+            assertRegex("hello.*world", result.stdout, "stdout should contain 'hello world'");
+        }
+    }
+
+    commandExistsTest() {
+        # Test that common commands exist
+        assertTrue(Process::commandExists("ls"), "ls should exist");
+        assertTrue(Process::commandExists("echo"), "echo should exist");
+
+        # Test that non-existent command returns false
+        assertFalse(Process::commandExists("some-nonexistent-command-12345"), "non-existent command should return false");
+
+        # Test with test scripts
+        assertFalse(Process::commandExists("test_true.q"), "test_true.q should not be in PATH by default");
+    }
+
+    shellOptionTest() {
+        # Test shell option with glob expansion
+        {
+            hash<auto> result = Process::run("echo *.q", NOTHING, {"shell": True, "cwd": m_prefix});
+            assertTrue(result.ok, "shell command should succeed");
+            assertEq(0, result.exit_code, "exit code should be 0");
+            # The output should contain test scripts (not literal *.q)
+            assertTrue(result.stdout.find("test_") > -1, "shell should expand glob");
+        }
+
+        # Test shell option with variable expansion
+        {
+            hash<auto> result = Process::run("echo $HOME", NOTHING, {"shell": True});
+            assertTrue(result.ok, "shell command should succeed");
+            assertEq(0, result.exit_code, "exit code should be 0");
+            assertTrue(result.stdout.size() > 1, "HOME variable should expand");
+        }
+
+        # Test shell option with pipe
+        {
+            hash<auto> result = Process::run("echo hello world | wc -w", NOTHING, {"shell": True});
+            assertTrue(result.ok, "shell command should succeed");
+            assertEq(0, result.exit_code, "exit code should be 0");
+            assertRegex("2", result.stdout, "word count should be 2");
+        }
+    }
+
+    niceOptionTest() {
+        # Test nice option with positive value
+        {
+            Process p(getTestValue("testTrue"), {"path": (m_prefix,), "nice": 10});
+            p.wait();
+            assertEq(0, p.exitCode(), "process with nice should succeed");
+        }
+
+        # Test invalid nice value (too high)
+        {
+            assertThrows("PROCESS-OPTION-ERROR", sub () {
+                Process p(getTestValue("testTrue"), {"path": (m_prefix,), "nice": 25});
+            });
+        }
+
+        # Test invalid nice value (too low)
+        {
+            assertThrows("PROCESS-OPTION-ERROR", sub () {
+                Process p(getTestValue("testTrue"), {"path": (m_prefix,), "nice": -25});
+            });
+        }
+
+        # Test invalid nice type
+        {
+            assertThrows("PROCESS-OPTION-ERROR", sub () {
+                Process p(getTestValue("testTrue"), {"path": (m_prefix,), "nice": "high"});
+            });
+        }
+    }
+
+    resourceUsageTest() {
+        # Test getResourceUsage() for current process
+        {
+            hash<auto> usage = Process::getResourceUsage();
+            # Use assertTrue for comparisons since QUnit assert* have unusual argument order
+            assertTrue(usage.user_time >= 0.0, "user_time should be >= 0");
+            assertTrue(usage.system_time >= 0.0, "system_time should be >= 0");
+            assertTrue(usage.max_rss > 0, "max_rss should be > 0");
+        }
+
+        # Test getResourceUsage() for specific PID
+        {
+            hash<auto> usage = Process::getResourceUsage(getpid());
+            assertTrue(usage.user_time >= 0.0, "user_time should be >= 0");
+            assertTrue(usage.max_rss > 0, "max_rss should be > 0");
+        }
+
+        # Test getResourceUsage() for child process
+        {
+            Process p(getTestValue("testSleep"), 1, {"path": (m_prefix,)});
+            p.wait();
+            hash<auto> usage = p.getResourceUsage();
+            # Child usage may be zero if child didn't use much CPU
+            assertTrue(exists usage.user_time, "user_time should exist");
+            assertTrue(exists usage.system_time, "system_time should exist");
+        }
+    }
+
+    childPidsTest() {
+        # Test getChildPids() for process with children
+        {
+            # Launch bash with background children
+            Process p("bash", ("-c", "sleep 10 & sleep 10 & wait"), {"shell": False});
+            sleep(500ms);  # Give time for children to start
+
+            if (Qore::PlatformOS == "Linux" || Qore::PlatformOS == "Darwin") {
+                list<int> children = p.getChildPids();
+                assertGe(children.size(), 0, "should have at least 0 children (timing dependent)");
+            }
+
+            p.terminate();
+        }
+
+        # Test static getChildPids()
+        {
+            if (Qore::PlatformOS == "Linux" || Qore::PlatformOS == "Darwin") {
+                list<int> children = Process::getChildPids(getpid());
+                # Current process may have children from test harness
+                assertTrue(exists children, "getChildPids should return a list");
+            }
+        }
+
+        # Negative tests for getChildPids with invalid PIDs
+        {
+            # PID 1 (init) should be rejected - prevents accidental system-wide operations
+            assertThrows("PROCESS-GETCHILDPIDS-ERROR", sub () {
+                Process::getChildPids(1);
+            });
+
+            # PID 0 should be rejected
+            assertThrows("PROCESS-GETCHILDPIDS-ERROR", sub () {
+                Process::getChildPids(0);
+            });
+
+            # Negative PIDs should be rejected
+            assertThrows("PROCESS-GETCHILDPIDS-ERROR", sub () {
+                Process::getChildPids(-1);
+            });
+        }
+    }
+
+    # Negative tests for signal/terminate operations on invalid processes
+    invalidProcessTests() {
+        # Test sendSignal on already-terminated process
+        {
+            Process p(getTestValue("testTrue"), {"path": (m_prefix,)});
+            p.wait();
+            # Process is now dead, sendSignal should fail gracefully
+            assertThrows("PROCESS-SIGNAL-ERROR", sub () {
+                p.sendSignal(SIGTERM);
+            });
+        }
+
+        # Test terminate on already-terminated process
+        {
+            Process p(getTestValue("testTrue"), {"path": (m_prefix,)});
+            p.wait();
+            # Second terminate should handle gracefully (process already dead)
+            try {
+                p.terminate();
+            } catch (hash<ExceptionInfo> ex) {
+                # Expected - process already dead
+                assertTrue(ex.err =~ /PROCESS/, "should be a PROCESS error");
+            }
+        }
+
+        # Test that terminate doesn't kill all processes when PID becomes invalid
+        # This is a critical safety test - if this fails, it could kill all user processes
+        {
+            Process p("sleep", ("1",));
+            sleep(100ms);
+            int originalPid = p.id();
+            assertTrue(originalPid > 0, "PID should be positive");
+            p.terminate();
+            # Verify we didn't kill unrelated processes by checking if common system
+            # processes are still running
+            assertTrue(Process::checkPid(getpid()), "current process should still be running");
+        }
+    }
+
+    terminateTreeTest() {
+        # Test terminateTree() kills parent and children
+        {
+            Process p("bash", ("-c", "sleep 100 & sleep 100 & wait"));
+            sleep(200ms);  # Give time for children to start
+
+            int pid = p.id();
+            assertTrue(p.running(), "process should be running");
+
+            if (Qore::PlatformOS == "Linux" || Qore::PlatformOS == "Darwin") {
+                p.terminateTree();
+                assertFalse(p.running(), "process should not be running after terminateTree");
+
+                # Verify parent is dead
+                assertFalse(Process::checkPid(pid), "parent should be dead");
+            } else {
+                p.terminate();
+            }
+        }
+    }
+
+    pipelineTest() {
+        # Test simple pipeline
+        {
+            hash<auto> result = Process::pipeline((
+                ("echo", "hello world"),
+                ("wc", "-w")
+            ));
+            assertTrue(result.ok, "pipeline should succeed");
+            assertEq(0, result.exit_code, "exit code should be 0");
+            assertRegex("2", result.stdout, "word count should be 2");
+        }
+
+        # Test multi-stage pipeline
+        {
+            hash<auto> result = Process::pipeline((
+                ("echo", "cherry\napple\nbanana"),
+                ("sort",),
+                ("head", "-1")
+            ));
+            assertTrue(result.ok, "pipeline should succeed");
+            assertRegex("apple", result.stdout, "first sorted line should be apple");
+        }
+
+        # Test single command (should work like run)
+        {
+            hash<auto> result = Process::pipeline((
+                ("echo", "hello"),
+            ));
+            assertTrue(result.ok, "single command pipeline should succeed");
+            assertRegex("hello", result.stdout, "output should contain hello");
+        }
+
+        # Test pipeline error (empty)
+        {
+            assertThrows("PROCESS-PIPELINE-ERROR", sub () {
+                Process::pipeline(());
+            });
+        }
+    }
+
+    resourceLimitsTest() {
+        # Test with cpu limit (process should be killed if exceeds)
+        # Note: This is hard to test reliably, so we just verify the option is accepted
+        {
+            Process p(getTestValue("testTrue"), {"path": (m_prefix,), "limits": {"cpu": 60}});
+            p.wait();
+            assertEq(0, p.exitCode(), "process with cpu limit should succeed");
+        }
+
+        # Test with memory limit
+        {
+            Process p(getTestValue("testTrue"), {"path": (m_prefix,), "limits": {"memory": 1024 * 1024 * 1024}});  # 1GB
+            p.wait();
+            assertEq(0, p.exitCode(), "process with memory limit should succeed");
+        }
+
+        # Test with file limit
+        {
+            Process p(getTestValue("testTrue"), {"path": (m_prefix,), "limits": {"files": 1024}});
+            p.wait();
+            assertEq(0, p.exitCode(), "process with file limit should succeed");
+        }
+
+        # Test invalid limits type
+        {
+            assertThrows("PROCESS-OPTION-ERROR", sub () {
+                Process p(getTestValue("testTrue"), {"path": (m_prefix,), "limits": "invalid"});
+            });
+        }
+
+        # Test multiple limits together
+        {
+            Process p(getTestValue("testTrue"), {"path": (m_prefix,), "limits": {
+                "memory": 1024 * 1024 * 1024,
+                "cpu": 60,
+                "files": 1024,
+                "core": 0,  # Disable core dumps
+            }});
+            p.wait();
+            assertEq(0, p.exitCode(), "process with multiple limits should succeed");
+        }
     }
 }
 

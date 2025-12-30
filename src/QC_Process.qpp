@@ -39,9 +39,13 @@
 
 #if defined(__linux__) || (defined(__APPLE__) && defined(__MACH__)) || defined(__sun__)
 #define HAVE_PROCESS_GETMEMORYINFO 1
-#define HAVE_PROCESS_GETDESCRIPTORCOUNT 1
 #else
 #define HAVE_PROCESS_GETMEMORYINFO 0
+#endif
+
+#if defined(__linux__) || (defined(__APPLE__) && defined(__MACH__))
+#define HAVE_PROCESS_GETDESCRIPTORCOUNT 1
+#else
 #define HAVE_PROCESS_GETDESCRIPTORCOUNT 0
 #endif
 
@@ -56,6 +60,8 @@
 #endif
 
 DLLLOCAL extern const TypedHashDecl* hashdeclMemorySummaryInfo;
+DLLLOCAL extern const TypedHashDecl* hashdeclProcessResult;
+DLLLOCAL extern const TypedHashDecl* hashdeclResourceUsageInfo;
 
 // issue #4293 #4303 it appears that there are race conditions in the Boost process library
 // handling I/O when starting processes, therefore we serialize process startup
@@ -91,6 +97,59 @@ hashdecl Qore::Process::MemorySummaryInfo {
     int rss;
     //! the private memory size of the process giving a measure of how much memory the process itself is using
     int priv;
+}
+
+//! A hash of process execution results as provided by @ref Qore::Process::Process::run() "Process::run()"
+/** This hashdecl provides the return type for the convenience method that runs a command and captures its output.
+*/
+hashdecl Qore::Process::ProcessResult {
+    //! the standard output of the process as a string
+    string stdout;
+    //! the standard error output of the process as a string
+    string stderr;
+    //! the exit code of the process (-1 if the process was terminated due to timeout)
+    int exit_code;
+    //! @ref Qore::True "True" if the process completed normally, @ref Qore::False "False" if it timed out
+    bool ok;
+}
+
+//! A hash of resource usage information as provided by @ref Qore::Process::Process::getResourceUsage() "Process::getResourceUsage()"
+/** @note This uses getrusage() on POSIX systems.  For child processes, this returns cumulative stats for all
+    terminated child processes.
+*/
+hashdecl Qore::Process::ResourceUsageInfo {
+    //! user CPU time used in seconds (floating point)
+    float user_time;
+    //! system CPU time used in seconds (floating point)
+    float system_time;
+    //! maximum resident set size in bytes
+    int max_rss;
+    //! integral shared memory size (Linux: currently always 0)
+    int shared_size;
+    //! integral unshared data size (Linux: currently always 0)
+    int unshared_data_size;
+    //! integral unshared stack size (Linux: currently always 0)
+    int unshared_stack_size;
+    //! page reclaims (soft page faults)
+    int minor_faults;
+    //! page faults (hard page faults)
+    int major_faults;
+    //! swaps (Linux: currently always 0)
+    int swaps;
+    //! block input operations
+    int block_input;
+    //! block output operations
+    int block_output;
+    //! IPC messages sent (Linux: currently always 0)
+    int messages_sent;
+    //! IPC messages received (Linux: currently always 0)
+    int messages_received;
+    //! signals received (Linux: currently always 0)
+    int signals_received;
+    //! voluntary context switches
+    int voluntary_context_switches;
+    //! involuntary context switches
+    int involuntary_context_switches;
 }
 
 //! System process wrapper.
@@ -148,8 +207,25 @@ p.wait();
       to this object.  In case an \c OutputStream object is used here, the @ref readStdout() and
       @ref readStdoutBinary() methods cannot be called, or a \c PROCESS-STREAM-ERROR exception will be thrown.
     - \c stderr: an opened %Qore \c File or \c OutputStream object; standard error output of the process will be
-      redirected to this object.  In case an \c OutputStream object is used here, the @ref readStdout() and
-      @ref readStdoutBinary() methods cannot be called, or a \c PROCESS-STREAM-ERROR exception will be thrown.
+      redirected to this object.  In case an \c OutputStream object is used here, the @ref readStderr() and
+      @ref readStderrBinary() methods cannot be called, or a \c PROCESS-STREAM-ERROR exception will be thrown.
+    - \c encoding: a string specifying the character encoding for string output from @ref readStdout() and
+      @ref readStderr() methods (default: \c "UTF-8").  When using a multi-byte encoding, partial characters at
+      read boundaries will be buffered and prepended to the next read.  For binary data or non-text output, use
+      a single-byte encoding like \c "ASCII" or the binary read methods instead.
+    - \c shell: if @ref Qore::True "True", the command will be executed through the system shell (\c /bin/sh on
+      POSIX systems), allowing shell features like globbing, variable expansion, and piping.  The command string
+      is passed to \c "sh -c command".  Default is @ref Qore::False "False".
+    - \c nice: an integer value to adjust the process priority (POSIX only).  Positive values decrease priority
+      (nicer), negative values increase priority (requires root).  Range is typically -20 to 19.
+    - \c limits: a hash of resource limits to set for the child process (POSIX only).  Supported keys:
+      - \c memory: maximum virtual memory size in bytes (RLIMIT_AS)
+      - \c data: maximum data segment size in bytes (RLIMIT_DATA)
+      - \c stack: maximum stack size in bytes (RLIMIT_STACK)
+      - \c core: maximum core file size in bytes (RLIMIT_CORE)
+      - \c cpu: maximum CPU time in seconds (RLIMIT_CPU)
+      - \c files: maximum number of open files (RLIMIT_NOFILE)
+      - \c processes: maximum number of processes (RLIMIT_NPROC)
     - \c on_success: a code/call closure with prototype <tt>sub (hash<auto> e)</tt>.
       This handler is invoked if launching the process has succeeded.
     - \c on_setup: a code/call closure with prototype <tt>sub (hash<auto> e)</tt>.
@@ -439,8 +515,37 @@ nothing Process::terminate() {
     priv->terminate(xsink);
 }
 
+//! Send a signal to the child process.
+/** This method sends the specified signal to the child process.  Use this for graceful
+    termination by sending SIGTERM before resorting to terminate() (SIGKILL).
+
+    @par Example:
+    @code{.py}
+Process p("long_running_task");
+# Try graceful shutdown first
+p.sendSignal(SIGTERM);
+if (!p.wait(5s)) {
+    # Process didn't respond to SIGTERM, force kill
+    p.terminate();
+}
+    @endcode
+
+    @param sig the signal number to send (e.g., SIGTERM, SIGINT, SIGHUP)
+
+    @return @ref Qore::True "True" if the signal was sent successfully
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+    @throw PROCESS-SIGNAL-ERROR in case of an error sending the signal
+    @throw PROCESS-SIGNAL-UNSUPPORTED-ERROR if signals are not supported on this platform
+
+    @note This method is only available on POSIX systems
+ */
+bool Process::sendSignal(int sig) {
+    return priv->sendSignal(sig, xsink);
+}
+
 //! Write into child's \c stdin
-/** @param s a string data to be writen
+/** @param s a string data to be written
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
@@ -449,7 +554,7 @@ nothing Process::write(string s) {
 }
 
 //! Write into child's \c stdin
-/** @param b a binary data to be writen
+/** @param b a binary data to be written
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
@@ -485,6 +590,28 @@ nothing Process::write(float f) {
 nothing Process::write(number n) {
     QoreStringNodeValueHelper s(n);
     priv->write(s->c_str(), s->size(), xsink);
+}
+
+//! Close child's stdin to signal EOF
+/** This method closes the stdin pipe to the child process, signaling end-of-file
+    to programs that read from stdin until EOF.
+
+    @par Example:
+    @code{.py}
+Process p("sort");
+p.write("banana\napple\ncherry\n");
+p.closeStdin();  # Signal EOF so sort can finish
+p.wait();
+string sorted = p.readStdout(1000);
+    @endcode
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+    @throw PROCESS-CLOSESTDIN-ERROR in case of an error closing the stdin pipe
+
+    @note This method waits for any pending write operations to complete before closing stdin
+ */
+nothing Process::closeStdin() {
+    priv->closeStdin(xsink);
 }
 
 //! Read from child process's standard output.
@@ -872,4 +999,315 @@ static int Process::getDescriptorCount(int pid) [flags=RET_VALUE_ONLY] {
 */
 static int Process::getDescriptorCount() [flags=RET_VALUE_ONLY] {
     return ProcessPriv::getDescriptorCount(xsink, getpid());
+}
+
+//! Run a command and return the result
+/** This is a convenience method that runs a command, waits for it to complete (with optional timeout),
+    and returns the stdout, stderr, and exit code.
+
+    @par Example:
+    @code{.py}
+# Run a simple command
+hash<ProcessResult> result = Process::run("ls", ("-la",));
+if (result.ok && result.exit_code == 0) {
+    printf("Output: %s\n", result.stdout);
+} else {
+    printf("Error: %s\n", result.stderr);
+}
+
+# Run with timeout
+result = Process::run("long_running_task", NOTHING, NOTHING, 30s);
+if (!result.ok) {
+    printf("Process timed out\n");
+}
+    @endcode
+
+    @param command the command to run
+    @param arguments optional list of arguments to pass to the command
+    @param opts optional hash of process options (see @ref process_options); note that stdout and stderr
+        stream options are not supported with this method
+    @param timeout optional timeout in milliseconds; if 0 or not provided, waits indefinitely
+
+    @return a @ref ProcessResult hash with stdout, stderr, exit_code, and ok fields
+
+    @throw PROCESS-CONSTRUCTOR-ERROR in case of error starting the process
+    @throw PROCESS-SEARCH-PATH-ERROR in case the command is not found in PATH
+
+    @note If the process times out, it will be terminated and the \c ok field will be @ref Qore::False "False"
+*/
+static hash<ProcessResult> Process::run(string command, *softlist<softstring> arguments, *hash<auto> opts, timeout timeout = 0) {
+    return ProcessPriv::run(command->c_str(), arguments, opts, timeout, xsink);
+}
+
+//! Check if a command exists in the system PATH
+/** This is a convenience method to check if a command is available without launching it.
+
+    @par Example:
+    @code{.py}
+if (Process::commandExists("docker")) {
+    printf("Docker is installed\n");
+}
+    @endcode
+
+    @param command the command to check for
+
+    @return @ref Qore::True "True" if the command exists in PATH, @ref Qore::False "False" otherwise
+*/
+static bool Process::commandExists(string command) {
+    try {
+        ProcessPriv::optsPath(command->c_str(), nullptr, xsink);
+        if (*xsink) {
+            xsink->clear();
+            return false;
+        }
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+//! Returns resource usage information for terminated child processes
+/** This method returns cumulative resource usage for all terminated child processes.
+
+    @par Example:
+    @code{.py}
+Process p("compute_intensive_task");
+p.wait();
+hash<ResourceUsageInfo> usage = p.getResourceUsage();
+printf("CPU time: user=%.2f sys=%.2f\n", usage.user_time, usage.system_time);
+printf("Max RSS: %d bytes\n", usage.max_rss);
+    @endcode
+
+    @return a @ref ResourceUsageInfo hash with resource usage statistics
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+    @throw PROCESS-GETRESOURCEUSAGE-ERROR in case of error getting resource usage
+
+    @note This returns cumulative stats for all terminated child processes, not just this one
+*/
+hash<ResourceUsageInfo> Process::getResourceUsage() {
+    return priv->getResourceUsage(xsink);
+}
+
+//! Returns resource usage information for the current process
+/** @par Example:
+    @code{.py}
+hash<ResourceUsageInfo> usage = Process::getResourceUsage();
+printf("CPU time: user=%.2f sys=%.2f\n", usage.user_time, usage.system_time);
+    @endcode
+
+    @return a @ref ResourceUsageInfo hash with resource usage statistics
+
+    @throw PROCESS-GETRESOURCEUSAGE-ERROR in case of error getting resource usage
+*/
+static hash<ResourceUsageInfo> Process::getResourceUsage() {
+    return ProcessPriv::getResourceUsage(getpid(), xsink);
+}
+
+//! Returns resource usage information for a specific process
+/** @par Example:
+    @code{.py}
+hash<ResourceUsageInfo> usage = Process::getResourceUsage(pid);
+printf("CPU time: user=%.2f sys=%.2f\n", usage.user_time, usage.system_time);
+    @endcode
+
+    @param pid the PID of the process
+
+    @return a @ref ResourceUsageInfo hash with resource usage statistics
+
+    @throw PROCESS-GETRESOURCEUSAGE-ERROR in case of error getting resource usage
+    @throw PROCESS-GETRESOURCEUSAGE-UNSUPPORTED-ERROR if getting resource usage for arbitrary PIDs
+        is not supported on this platform (only supported on Linux)
+
+    @note On Linux, this reads from /proc/PID/stat.  Not all fields are available.
+*/
+static hash<ResourceUsageInfo> Process::getResourceUsage(int pid) {
+    return ProcessPriv::getResourceUsage(pid, xsink);
+}
+
+//! Returns a list of child PIDs for this process
+/** @par Example:
+    @code{.py}
+Process p("bash", ("-c", "sleep 100 & sleep 100 & wait"));
+list<int> children = p.getChildPids();
+printf("Child processes: %y\n", children);
+    @endcode
+
+    @return a list of child PIDs
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+    @throw PROCESS-GETCHILDPIDS-ERROR in case of error getting child PIDs
+    @throw PROCESS-GETCHILDPIDS-UNSUPPORTED-ERROR if getting child PIDs is not supported on this platform
+
+    @note On Linux, this uses /proc/PID/task/PID/children if available, otherwise scans /proc
+*/
+list<int> Process::getChildPids() {
+    return priv->getChildPids(xsink);
+}
+
+//! Returns a list of child PIDs for a specific process
+/** @par Example:
+    @code{.py}
+list<int> children = Process::getChildPids(getpid());
+printf("My child processes: %y\n", children);
+    @endcode
+
+    @param pid the PID to get children for
+
+    @return a list of child PIDs
+
+    @throw PROCESS-GETCHILDPIDS-ERROR in case of error getting child PIDs
+    @throw PROCESS-GETCHILDPIDS-UNSUPPORTED-ERROR if getting child PIDs is not supported on this platform
+*/
+static list<int> Process::getChildPids(int pid) {
+    return ProcessPriv::getChildPids(pid, xsink);
+}
+
+//! Terminates this process
+/** This method terminates the main process.
+
+    @par Example:
+    @code{.py}
+Process p("bash", ("-c", "while true; do sleep 1; done"));
+p.terminateTree();  # Kills bash
+    @endcode
+
+    @return @ref Qore::True "True" if the process was terminated successfully
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+    @throw PROCESS-TERMINATE-ERROR in case of error terminating the process
+
+    @note Currently this method only terminates the main process. Child process termination
+    is planned for a future release. For now, use Process::getChildPids() to manually
+    enumerate and terminate child processes if needed.
+*/
+bool Process::terminateTree() {
+    return priv->terminateTree(xsink);
+}
+
+//! Execute a pipeline of commands and return the final output
+/** This method chains multiple commands together, connecting the stdout of each command
+    to the stdin of the next, similar to shell pipes.
+
+    @par Example:
+    @code{.py}
+# Equivalent to: cat file.txt | grep pattern | sort | uniq
+hash<ProcessResult> result = Process::pipeline(
+    ("cat", "file.txt"),
+    ("grep", "pattern"),
+    ("sort",),
+    ("uniq",)
+);
+printf("Output: %s\n", result.stdout);
+    @endcode
+
+    @param commands a list of commands, where each command is a list containing the command and its arguments
+
+    @return a @ref ProcessResult hash with the final stdout, combined stderr from all processes,
+        the exit code of the last process, and ok=True if all processes succeeded
+
+    @throw PROCESS-PIPELINE-ERROR if the pipeline is empty or invalid
+    @throw PROCESS-CONSTRUCTOR-ERROR if any process fails to start
+
+    @note
+    - All processes in the pipeline are started concurrently
+    - stderr from all processes is collected and combined in the result
+    - The exit code in the result is from the last process in the pipeline
+    - If any process fails, the ok field will be False
+*/
+static hash<ProcessResult> Process::pipeline(softlist<softlist<softstring>> commands) {
+    if (!commands || !commands->size()) {
+        xsink->raiseException("PROCESS-PIPELINE-ERROR", "pipeline requires at least one command");
+        return QoreValue();
+    }
+
+    size_t numCommands = commands->size();
+
+    // For a single command, just use run()
+    if (numCommands == 1) {
+        const QoreListNode* cmd = commands->retrieveEntry(0).get<QoreListNode>();
+        if (!cmd || !cmd->size()) {
+            xsink->raiseException("PROCESS-PIPELINE-ERROR", "each command must be a non-empty list");
+            return QoreValue();
+        }
+        QoreStringValueHelper cmdStr(cmd->retrieveEntry(0));
+        ReferenceHolder<QoreListNode> args(new QoreListNode(stringTypeInfo), xsink);
+        for (size_t i = 1; i < cmd->size(); i++) {
+            QoreStringValueHelper argStr(cmd->retrieveEntry(i));
+            args->push(new QoreStringNode(argStr->c_str()), xsink);
+        }
+        return ProcessPriv::run(cmdStr->c_str(), *args, nullptr, 0, xsink);
+    }
+
+    // For multiple commands, use shell to create the pipeline
+    // Build shell command: cmd1 arg1 | cmd2 arg2 | cmd3 arg3
+    QoreStringNode* shellCmd = new QoreStringNode;
+    bool first = true;
+
+    ConstListIterator cmdIter(commands);
+    while (cmdIter.next()) {
+        QoreValue cmdVal = cmdIter.getValue();
+        if (cmdVal.getType() != NT_LIST) {
+            shellCmd->deref();
+            xsink->raiseException("PROCESS-PIPELINE-ERROR", "each command must be a list, got %s",
+                cmdVal.getTypeName());
+            return QoreValue();
+        }
+
+        const QoreListNode* cmd = cmdVal.get<const QoreListNode>();
+        if (!cmd || !cmd->size()) {
+            shellCmd->deref();
+            xsink->raiseException("PROCESS-PIPELINE-ERROR", "each command must be a non-empty list");
+            return QoreValue();
+        }
+
+        if (!first) {
+            shellCmd->concat(" | ");
+        }
+        first = false;
+
+        // Add command and arguments (with proper quoting)
+        for (size_t i = 0; i < cmd->size(); i++) {
+            if (i > 0) shellCmd->concat(' ');
+
+            QoreStringValueHelper argStr(cmd->retrieveEntry(i));
+            const char* arg = argStr->c_str();
+
+            // Check if quoting is needed
+            bool needsQuote = false;
+            for (const char* p = arg; *p; p++) {
+                if (*p == ' ' || *p == '\t' || *p == '"' || *p == '\'' ||
+                    *p == '|' || *p == '&' || *p == ';' || *p == '<' || *p == '>' ||
+                    *p == '(' || *p == ')' || *p == '$' || *p == '`' || *p == '\\' ||
+                    *p == '\n') {
+                    needsQuote = true;
+                    break;
+                }
+            }
+
+            if (needsQuote) {
+                // Use single quotes, escaping any single quotes in the string
+                shellCmd->concat('\'');
+                for (const char* p = arg; *p; p++) {
+                    if (*p == '\'') {
+                        shellCmd->concat("'\\''");
+                    } else {
+                        shellCmd->concat(*p);
+                    }
+                }
+                shellCmd->concat('\'');
+            } else {
+                shellCmd->concat(arg);
+            }
+        }
+    }
+
+    // Create hash with shell option
+    ReferenceHolder<QoreHashNode> opts(new QoreHashNode(autoTypeInfo), xsink);
+    opts->setKeyValue("shell", true, xsink);
+
+    // Use the shell command directly with the shell option
+    QoreHashNode* result = ProcessPriv::run(shellCmd->c_str(), nullptr, *opts, 0, xsink);
+    shellCmd->deref();
+    return result;
 }

@@ -77,7 +77,7 @@ sed -i 's/#!\/usr\/bin\/env qore/#!\/usr\/bin\/qore/' test/*.qtest
 make DESTDIR=%{buildroot} install %{?_smp_mflags}
 
 %check
-qore -l ./process-api-1.3.qmod test/process.qtest -v
+qore -l ./process-api-1.4.qmod test/process.qtest -v
 
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -85,7 +85,7 @@ rm -rf $RPM_BUILD_ROOT
 %files
 %defattr(-,root,root,-)
 %{module_dir}
-%doc COPYING README test/process.qtest test/test_cwd.q test/test_env.q test/test_false.q test/test_io.q test/test_output.q test/test_sleep.q test/test_true.q test/test_utf8.q
+%doc COPYING README test/process.qtest test/test_cwd.q test/test_env.q test/test_false.q test/test_io.q test/test_output.q test/test_signal.q test/test_sleep.q test/test_stdin_eof.q test/test_true.q test/test_utf8.q
 
 %package doc
 Summary: Documentation and examples for the Qore process module
@@ -100,6 +100,23 @@ process module.
 %doc docs/process test
 
 %changelog
+* Mon Dec 30 2025 David Nichols <david.nichols@qoretechnologies.com>
+- updated to boost 1.90 (includes exit-code fix for terminate + async_wait)
+- added PID validation to static Process::terminate(), Process::checkPid(),
+  and Process::waitForTermination() to prevent kill(-1) from killing all processes
+
+* Sun Dec 29 2025 David Nichols <david.nichols@qoretechnologies.com>
+- added sendSignal() method to send signals to processes
+- added closeStdin() method to close stdin pipe and signal EOF
+- added Process::run() static method for synchronous command execution with timeout
+- added getResourceUsage() method and static variant for resource usage stats
+- added getChildPids() method and static variant to get child process IDs
+- added terminateTree() method to terminate process and all descendants
+- added Process::pipeline() static method for command pipelines
+- added constructor options: encoding, shell, nice, limits
+- added critical safety checks to prevent kill(-1) from killing all user processes
+- child processes now run in their own process group for signal isolation
+
 * Mon Aug 11 2025 David Nichols <david.nichols@qoretechnologies.com>
 - updated to use boost process 2.0
 - updated to version 2.0

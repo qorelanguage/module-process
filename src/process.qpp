@@ -1,7 +1,7 @@
 /*
     Qore Programming Language process Module
 
-    Copyright (C) 2003 - 2022 Qore Technologies, s.r.o.
+    Copyright (C) 2003 - 2025 Qore Technologies, s.r.o.
 
     Permission is hereby granted, free of charge, to any person obtaining a
     copy of this software and associated documentation files (the "Software"),
@@ -36,13 +36,48 @@ The %process module is a Qore wrapper around
 Primary class provided by this module:
 - @ref Qore::Process::Process "Process"
 
-The %process module provdes an API to manage system processes. It can be used to:
+The %process module provides an API to manage system processes. It can be used to:
  - create child processes
  - communicate with child processes through standard input/output/error
  - wait for processes to exit
  - terminate processes
+ - send signals to processes (POSIX only)
  - get process memory and CPU load information
+ - get file descriptor counts
  - and more
+
+    @section process_platforms Platform Support
+
+    @subsection process_platforms_linux Linux
+    Full support for all features:
+    - Process creation and management
+    - Memory information via \c /proc/PID/statm and \c /proc/PID/smaps_rollup (or \c smaps fallback)
+    - File descriptor counting via \c /proc/PID/fd
+    - Signal sending via kill()
+    - All executor callbacks
+
+    @subsection process_platforms_macos macOS / Darwin
+    Full support with some limitations:
+    - Process creation and management: fully supported
+    - Memory information: requires special permissions for other processes
+      - Reading memory of your own process works normally
+      - Reading memory of other processes requires either root privileges or
+        the \c "com.apple.system-task-ports" entitlement
+    - File descriptor counting: fully supported via \c libproc
+    - Signal sending: fully supported
+
+    @subsection process_platforms_solaris Solaris
+    Partial support:
+    - Process creation and management: fully supported
+    - Memory information: fully supported via \c libproc and \c /proc/PID/map
+    - File descriptor counting: NOT supported
+    - Signal sending: fully supported
+
+    @subsection process_platforms_windows Windows
+    Limited support (not fully implemented):
+    - Basic process creation may work
+    - Many POSIX-specific features are not available
+    - Signal sending is not supported
 
     @section process_license Process Module License Information
 
@@ -52,6 +87,47 @@ Boost parts in src/boost are distributed under the Boost Software License,
 Version 1.0. (See http://www.boost.org/LICENSE_1_0.txt)
 
     @section process_relnotes Process Module Release History
+
+    @subsection process_v2_1 process v2.1
+
+    <b>New Features:</b>
+    - added @ref Qore::Process::Process::closeStdin() "Process::closeStdin()" to signal EOF to child processes
+    - added @ref Qore::Process::Process::sendSignal() "Process::sendSignal()" for graceful termination via specific signals
+    - added @ref Qore::Process::Process::run() "Process::run()" convenience method to run a command and capture output
+    - added @ref Qore::Process::Process::commandExists() "Process::commandExists()" to check if a command is available
+    - added @ref Qore::Process::Process::getResourceUsage() "Process::getResourceUsage()" to get CPU time, memory, and other resource usage
+    - added @ref Qore::Process::Process::getChildPids() "Process::getChildPids()" to get child process PIDs
+    - added @ref Qore::Process::Process::terminateTree() "Process::terminateTree()" to kill a process and all its children
+    - added @ref Qore::Process::Process::pipeline() "Process::pipeline()" to chain multiple commands with pipes
+    - added @ref Qore::Process::ProcessResult "ProcessResult" hashdecl for run() return values
+    - added @ref Qore::Process::ResourceUsageInfo "ResourceUsageInfo" hashdecl for resource usage information
+    - added \c shell option to run commands through the system shell (/bin/sh -c)
+    - added \c nice option to set process priority (POSIX only)
+    - added \c limits option to set resource limits (memory, CPU time, file descriptors, etc.)
+
+    <b>Bug Fixes:</b>
+    - <b>CRITICAL:</b> fixed potential kill(-1, SIGKILL) bug that could kill all user processes when
+      terminate() or sendSignal() was called on an invalid/moved-from process object
+      (boost::process v1 returns -1 for invalid PIDs, and kill(-1, sig) kills all processes)
+    - added PID validation in sendSignal() and terminate() to reject PIDs <= 0
+    - added safety check in getChildPids() to reject PID 1 (init) and invalid PIDs
+    - child processes now run in their own process group (setpgid) to isolate signals
+    - patched boost::process v1 terminate.hpp to add pid <= 0 validation (matching v2 behavior)
+    - fixed empty code block in terminate() when handling ECHILD errors
+    - fixed getDescriptorCount() signature inconsistency on unsupported platforms
+    - fixed FILE* handle cleanup on constructor errors
+    - improved error handling when fdopen() fails for stdout/stderr redirection
+
+    <b>Safety Improvements:</b>
+    - all child processes now run in their own process group, preventing signals sent to the
+      child's process group from affecting the parent process
+    - PID validation prevents accidental operations on system processes (PID 1) or invalid PIDs
+    - getChildPids() refuses to enumerate children of PID 1 to prevent accidental system-wide operations
+
+    <b>Documentation:</b>
+    - documented the \c encoding option in process options
+    - documented the \c shell, \c nice, and \c limits options
+    - added comprehensive platform support documentation
 
     @subsection process_v2_0 process v2.0
     - updated to use Boost.Process v2.0
@@ -117,13 +193,19 @@ Version 1.0. (See http://www.boost.org/LICENSE_1_0.txt)
 static QoreNamespace ProcessNS("Qore::Process");
 
 DLLLOCAL const TypedHashDecl* hashdeclMemorySummaryInfo;
+DLLLOCAL const TypedHashDecl* hashdeclProcessResult;
+DLLLOCAL const TypedHashDecl* hashdeclResourceUsageInfo;
 
 DLLLOCAL QoreClass* initProcessClass(QoreNamespace& ns);
 
 DLLLOCAL TypedHashDecl* init_hashdecl_MemorySummaryInfo(QoreNamespace& ns);
+DLLLOCAL TypedHashDecl* init_hashdecl_ProcessResult(QoreNamespace& ns);
+DLLLOCAL TypedHashDecl* init_hashdecl_ResourceUsageInfo(QoreNamespace& ns);
 
 QoreStringNode* process_module_init() {
     hashdeclMemorySummaryInfo = init_hashdecl_MemorySummaryInfo(ProcessNS);
+    hashdeclProcessResult = init_hashdecl_ProcessResult(ProcessNS);
+    hashdeclResourceUsageInfo = init_hashdecl_ResourceUsageInfo(ProcessNS);
 
     ProcessNS.addSystemClass(initProcessClass(ProcessNS));
 
