@@ -982,7 +982,10 @@ void ProcessPriv::setExitCode(boost::system::error_code ec, int e) {
     assert(running_flag);
     running_flag = false;
     if (!ec) {
-        exit_code = bp::evaluate_exit_code(e);
+        // Note: boost::process v2 already evaluates the exit code before passing it to the handler
+        // (see process.hpp async_wait_op_::operator() which calls evaluate_exit_code())
+        // so we should NOT call evaluate_exit_code() again here
+        exit_code = e;
     }
     if (process_status_waiting) {
         cond_process_status.notify_all();
