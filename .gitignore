@@ -4,3 +4,6 @@
 # ignore cmake builds
 build/
 build-*/
+
+# ignore VS Code settings
+.vscode/
