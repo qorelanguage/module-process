@@ -124,7 +124,14 @@ struct callback_initializer {
         if (limits.hasMemory) {
             rl.rlim_cur = rl.rlim_max = limits.memory;
             if (setrlimit(RLIMIT_AS, &rl) != 0) {
+#ifdef __APPLE__
+                // macOS can reject RLIMIT_AS with EINVAL even for valid values; treat it as unsupported
+                if (errno != EINVAL) {
+                    return bp::error_code(errno, boost::system::system_category());
+                }
+#else
                 return bp::error_code(errno, boost::system::system_category());
+#endif
             }
         }
 
@@ -240,6 +247,9 @@ ProcessPriv::ProcessPriv(pid_t pid, ExceptionSink* xsink) :
         m_out_asiobuf(boost::asio::buffer(m_out_vec)),
         m_err_asiobuf(boost::asio::buffer(m_err_vec)) {
     try {
+        if (pid <= 0) {
+            throw std::runtime_error("Process PID must be a positive integer");
+        }
 #ifdef __APPLE__
         // check if process is valid and throw an exception is not
         if (kill(pid, 0)) {
@@ -2469,6 +2479,15 @@ QoreHashNode* ProcessPriv::run(const char* command, const QoreListNode* argument
     // If process didn't finish (timeout), terminate it
     if (!finished) {
         proc->terminate(xsink);
+        if (*xsink) {
+            return nullptr;
+        }
+        // Ensure background I/O is drained before destruction; otherwise the async thread can outlive buffers and
+        // segfault during teardown.
+        proc->wait(xsink);
+        if (*xsink) {
+            return nullptr;
+        }
     }
 
     return rv.release();
