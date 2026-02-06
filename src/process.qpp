@@ -202,17 +202,15 @@ DLLLOCAL TypedHashDecl* init_hashdecl_MemorySummaryInfo(QoreNamespace& ns);
 DLLLOCAL TypedHashDecl* init_hashdecl_ProcessResult(QoreNamespace& ns);
 DLLLOCAL TypedHashDecl* init_hashdecl_ResourceUsageInfo(QoreNamespace& ns);
 
-QoreStringNode* process_module_init() {
+static void process_module_init(QoreModuleInitContext& ctx, ExceptionSink& xsink) {
     hashdeclMemorySummaryInfo = init_hashdecl_MemorySummaryInfo(ProcessNS);
     hashdeclProcessResult = init_hashdecl_ProcessResult(ProcessNS);
     hashdeclResourceUsageInfo = init_hashdecl_ResourceUsageInfo(ProcessNS);
 
     ProcessNS.addSystemClass(initProcessClass(ProcessNS));
-
-    return 0;
 }
 
-void process_module_ns_init(QoreNamespace* rns, QoreNamespace* qns) {
+static void process_module_ns_init(QoreNamespace* rns, QoreNamespace* qns, ExceptionSink& xsink) {
     qns->addNamespace(ProcessNS.copy());
 }
 
@@ -220,15 +218,17 @@ void process_module_delete() {
    // nothing to do here in this case
 }
 
-// qore module symbols
-DLLEXPORT char qore_module_name[] = "process";
-DLLEXPORT char qore_module_version[] = PACKAGE_VERSION;
-DLLEXPORT char qore_module_description[] = "Process module";
-DLLEXPORT char qore_module_author[] = "Petr Vanek";
-DLLEXPORT char qore_module_url[] = "http://qore.org";
-DLLEXPORT int qore_module_api_major = QORE_MODULE_API_MAJOR;
-DLLEXPORT int qore_module_api_minor = QORE_MODULE_API_MINOR;
-DLLEXPORT qore_module_init_t qore_module_init = process_module_init;
-DLLEXPORT qore_module_ns_init_t qore_module_ns_init = process_module_ns_init;
-DLLEXPORT qore_module_delete_t qore_module_delete = process_module_delete;
-DLLEXPORT qore_license_t qore_module_license = QL_MIT;
+extern "C" DLLEXPORT void process_qore_module_desc(QoreModuleInfo& mod_info) {
+    mod_info.name = "process";
+    mod_info.version = PACKAGE_VERSION;
+    mod_info.desc = "Process module";
+    mod_info.author = "Petr Vanek";
+    mod_info.url = "http://qore.org";
+    mod_info.api_major = QORE_MODULE_API_MAJOR;
+    mod_info.api_minor = QORE_MODULE_API_MINOR;
+    mod_info.init = process_module_init;
+    mod_info.ns_init = process_module_ns_init;
+    mod_info.del = process_module_delete;
+    mod_info.license = QL_MIT;
+    mod_info.license_str = "MIT";
+}
