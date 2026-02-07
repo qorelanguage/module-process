@@ -1,5 +1,5 @@
 #!/usr/bin/env qore
-%new-style
+%modern
 
 # Read all lines from stdin until EOF, sort them, and print
 list<string> lines = ();

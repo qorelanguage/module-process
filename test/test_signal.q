@@ -1,5 +1,5 @@
 #!/usr/bin/env qore
-%new-style
+%modern
 
 # Simple script that handles SIGTERM gracefully
 bool running = True;

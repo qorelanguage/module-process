@@ -1,5 +1,5 @@
 #!/usr/bin/env qore
-%new-style
+%modern
 
 # WARNING: it hangs until stdin data are provided!
 string s = Qore::stdin.readLine();

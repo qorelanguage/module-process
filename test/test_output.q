@@ -1,5 +1,5 @@
 #!/usr/bin/env qore
-%new-style
+%modern
 
 stdout.printf("stdout");
 stderr.printf("stderr");

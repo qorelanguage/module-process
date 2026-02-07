@@ -1,5 +1,5 @@
 #!/usr/bin/env qore
-%new-style
+%modern
 
 string name = shift ARGV;
 string val = shift ARGV;

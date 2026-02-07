@@ -429,6 +429,11 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
         processArgs(arguments, exeArgs);
     }
 
+    // check for interrupt before spawning process
+    if (qore_check_io_interrupt(xsink, "Process::constructor")) {
+        return;
+    }
+
     // setup stdout, stderr and stdin closures
     prepareClosures();
 
@@ -1181,6 +1186,11 @@ bool ProcessPriv::wait(ExceptionSink* xsink) {
     //    detached_pid, exit_code);
 
     try {
+        // check for interrupt before blocking wait
+        if (qore_check_io_interrupt(xsink, "Process::wait")) {
+            return false;
+        }
+
         // wait on detached process
         if (detached_pid) {
             int wstatus;
@@ -2035,6 +2045,10 @@ void ProcessPriv::waitForTermination(int pid, ExceptionSink* xsink) {
         return;
     }
     while (true) {
+        // check for interrupt during poll wait
+        if (qore_check_io_interrupt(xsink, "Process::waitForTermination")) {
+            return;
+        }
         if (kill(pid, 0)) {
             break;
         }

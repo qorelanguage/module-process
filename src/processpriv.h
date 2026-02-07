@@ -1,7 +1,7 @@
 /*
     Qore Programming Language process Module
 
-    Copyright (C) 2003 - 2025 Qore Technologies, s.r.o.
+    Copyright (C) 2003 - 2026 Qore Technologies, s.r.o.
 
     Permission is hereby granted, free of charge, to any person obtaining a
     copy of this software and associated documentation files (the "Software"),
@@ -45,6 +45,7 @@
 
 // qore
 #include <qore/Qore.h>
+#include <qore/QoreSandboxManager.h>
 #include <qore/OutputStream.h>
 #include <qore/InputStream.h>
 
