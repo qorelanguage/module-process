@@ -1972,7 +1972,7 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfo(int pid, ExceptionSink* xsink) {
 #endif
 }
 
-#ifdef __linux__
+#if defined(__linux__)
 #include <cstdio>
 
 //! Check if a process is a zombie by reading /proc/<pid>/stat
@@ -2006,6 +2006,63 @@ static bool isZombie(int pid) {
     // State character is right after ") "
     return end_paren[2] == 'Z';
 }
+
+#elif defined(__APPLE__) && defined(__MACH__)
+#include <sys/sysctl.h>
+
+//! Check if a process is a zombie via sysctl (macOS/Darwin)
+static bool isZombie(int pid) {
+    struct kinfo_proc kp;
+    size_t len = sizeof(kp);
+    int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, pid};
+    if (sysctl(mib, 4, &kp, &len, nullptr, 0) == -1 || len == 0) {
+        return false;
+    }
+    return kp.kp_proc.p_stat == SZOMB;
+}
+
+#elif defined(__FreeBSD__) || defined(__DragonFly__)
+#include <sys/sysctl.h>
+#include <sys/user.h>
+
+//! Check if a process is a zombie via sysctl (FreeBSD/DragonFlyBSD)
+static bool isZombie(int pid) {
+    struct kinfo_proc kp;
+    size_t len = sizeof(kp);
+    int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, pid};
+    if (sysctl(mib, 4, &kp, &len, nullptr, 0) == -1 || len == 0) {
+        return false;
+    }
+    return kp.ki_stat == SZOMB;
+}
+
+#elif defined(__NetBSD__)
+#include <sys/sysctl.h>
+
+//! Check if a process is a zombie via sysctl (NetBSD)
+static bool isZombie(int pid) {
+    struct kinfo_proc2 kp;
+    size_t len = sizeof(kp);
+    int mib[6] = {CTL_KERN, KERN_PROC2, KERN_PROC_PID, pid, (int)sizeof(kp), 1};
+    if (sysctl(mib, 6, &kp, &len, nullptr, 0) == -1 || len == 0) {
+        return false;
+    }
+    return kp.p_stat == SZOMB;
+}
+
+#elif defined(__OpenBSD__)
+#include <sys/sysctl.h>
+
+//! Check if a process is a zombie via sysctl (OpenBSD)
+static bool isZombie(int pid) {
+    struct kinfo_proc kp;
+    size_t len = sizeof(kp);
+    int mib[6] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, pid, (int)sizeof(kp), 1};
+    if (sysctl(mib, 6, &kp, &len, nullptr, 0) == -1 || len == 0) {
+        return false;
+    }
+    return kp.p_stat == SZOMB;
+}
 #endif
 
 bool ProcessPriv::checkPid(int pid, ExceptionSink* xsink) {
@@ -2020,9 +2077,10 @@ bool ProcessPriv::checkPid(int pid, ExceptionSink* xsink) {
     if (kill(pid, 0)) {
         return false;
     }
-#ifdef __linux__
+#if defined(__linux__) || (defined(__APPLE__) && defined(__MACH__)) || defined(__FreeBSD__) \
+    || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__)
     // kill(pid, 0) returns success for zombie processes because the PID still exists
-    // in the process table; check /proc/<pid>/stat for zombie state
+    // in the process table; check the process state for zombie status
     if (isZombie(pid)) {
         return false;
     }
@@ -2098,8 +2156,9 @@ void ProcessPriv::waitForTermination(int pid, ExceptionSink* xsink) {
         if (kill(pid, 0)) {
             break;
         }
-#ifdef __linux__
-        // kill(pid, 0) returns success for zombie processes; check /proc/<pid>/stat
+#if defined(__linux__) || (defined(__APPLE__) && defined(__MACH__)) || defined(__FreeBSD__) \
+    || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__)
+        // kill(pid, 0) returns success for zombie processes; check process state
         if (isZombie(pid)) {
             break;
         }

@@ -771,8 +771,8 @@ public class Main inherits QUnit::Test {
         if (!HAVE_PROCESS_CHECKPID) {
             testSkip("checkPid not available on this platform");
         }
-        if (Qore::PlatformOS != "Linux") {
-            testSkip("zombie detection via /proc only implemented on Linux");
+        if (Qore::PlatformOS !~ /Linux|Darwin|FreeBSD|DragonFly|NetBSD|OpenBSD/) {
+            testSkip("zombie detection not implemented on this platform");
         }
         if (!Process::commandExists("python3")) {
             testSkip("python3 not available (needed to create zombie via fork())");
@@ -817,9 +817,31 @@ public class Main inherits QUnit::Test {
         # Wait for the child to exit and become a zombie
         sleep(500ms);
 
-        # Verify the process is actually a zombie via /proc
-        string stat_path = sprintf("/proc/%d/stat", child_pid);
-        assertTrue(is_file(stat_path), sprintf("zombie /proc/%d/stat should exist", child_pid));
+        # Verify the process is actually a zombie
+        if (Qore::PlatformOS == "Linux") {
+            # On Linux, verify via /proc
+            string stat_path = sprintf("/proc/%d/stat", child_pid);
+            assertTrue(is_file(stat_path), sprintf("zombie /proc/%d/stat should exist", child_pid));
+        } else {
+            # On macOS/*BSD, verify via ps
+            Process ps("ps", ("-o", "state=", "-p", string(child_pid)));
+            string state;
+            retries = 20;
+            while (retries > 0) {
+                *string s = ps.readStdout(100);
+                if (s) {
+                    state += s;
+                }
+                if (!ps.running()) {
+                    break;
+                }
+                usleep(50ms);
+                --retries;
+            }
+            state = trim(state);
+            assertTrue(state.size() > 0 && state[0] == "Z",
+                sprintf("ps should report zombie state (got '%s') for PID %d", state, child_pid));
+        }
 
         # checkPid should return false for zombie processes
         assertFalse(Process::checkPid(child_pid),
