@@ -98,6 +98,7 @@ public class Main inherits QUnit::Test {
         addTestCase("Wait timeout test", \waitTimeoutTest());
         addTestCase("Mem and checkPid test", \memoryAndCheckPidTest());
         addTestCase("Terminate test", \terminateTest());
+        addTestCase("Zombie detection test", \zombieDetectionTest());
         addTestCase("Output redirect test", \outputRedirectTest());
         addTestCase("Output redirect negative test", \outputRedirectNegativeTest());
         addTestCase("Output redirect normal read test", \outputRedirectReadTest());
@@ -764,6 +765,69 @@ public class Main inherits QUnit::Test {
         } else {
             assertThrows("PROCESS-WAITFORTERMINATION-UNSUPPORTED-ERROR", \Process::waitForTermination(), -10);
         }
+    }
+
+    zombieDetectionTest() {
+        if (!HAVE_PROCESS_CHECKPID) {
+            testSkip("checkPid not available on this platform");
+        }
+        if (Qore::PlatformOS != "Linux") {
+            testSkip("zombie detection via /proc only implemented on Linux");
+        }
+        if (!Process::commandExists("python3")) {
+            testSkip("python3 not available (needed to create zombie via fork())");
+        }
+
+        # Use Python's os.fork() to reliably create a zombie process
+        # The parent forks a child that exits immediately, then sleeps without calling wait()
+        string script = tmp_location() + DirSep + "zombie_creator.py";
+        {
+            File f();
+            f.open(script, O_CREAT|O_WRONLY|O_TRUNC, 0755);
+            f.write(
+                "#!/usr/bin/env python3\n"
+                "import os, time, sys\n"
+                "pid = os.fork()\n"
+                "if pid == 0:\n"
+                "    os._exit(0)\n"
+                "print(pid, flush=True)\n"
+                "time.sleep(300)\n"
+            );
+        }
+
+        Process p("python3", (script,));
+
+        # Read the child PID from stdout
+        string child_pid_str;
+        int retries = 100;
+        while (retries > 0) {
+            *string s = p.readStdout(100);
+            if (s) {
+                child_pid_str += s;
+                if (child_pid_str.find("\n") >= 0) {
+                    break;
+                }
+            }
+            usleep(50ms);
+            --retries;
+        }
+        int child_pid = trim(child_pid_str).toInt();
+        assertTrue(child_pid > 0, sprintf("child PID should be positive (got %d)", child_pid));
+
+        # Wait for the child to exit and become a zombie
+        sleep(500ms);
+
+        # Verify the process is actually a zombie via /proc
+        string stat_path = sprintf("/proc/%d/stat", child_pid);
+        assertTrue(is_file(stat_path), sprintf("zombie /proc/%d/stat should exist", child_pid));
+
+        # checkPid should return false for zombie processes
+        assertFalse(Process::checkPid(child_pid),
+            sprintf("checkPid should return false for zombie process (PID %d)", child_pid));
+
+        # Clean up
+        p.terminate();
+        unlink(script);
     }
 
     outputRedirectTest() {

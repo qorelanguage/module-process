@@ -1,7 +1,7 @@
 /*
     Qore Programming Language process Module
 
-    Copyright (C) 2003 - 2025 Qore Technologies, s.r.o.
+    Copyright (C) 2003 - 2026 Qore Technologies, s.r.o.
 
     Permission is hereby granted, free of charge, to any person obtaining a
     copy of this software and associated documentation files (the "Software"),
@@ -1972,6 +1972,42 @@ QoreHashNode* ProcessPriv::getMemorySummaryInfo(int pid, ExceptionSink* xsink) {
 #endif
 }
 
+#ifdef __linux__
+#include <cstdio>
+
+//! Check if a process is a zombie by reading /proc/<pid>/stat
+/** @return true if the process is a zombie, false otherwise (including if /proc is unavailable)
+*/
+static bool isZombie(int pid) {
+    char path[32];
+    snprintf(path, sizeof(path), "/proc/%d/stat", pid);
+
+    FILE* f = fopen(path, "r");
+    if (!f) {
+        return false;
+    }
+
+    char buf[512];
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+
+    if (!n) {
+        return false;
+    }
+    buf[n] = '\0';
+
+    // Parse /proc/PID/stat: "pid (comm) state ..."
+    // comm can contain spaces and parentheses, so find the LAST ')'
+    const char* end_paren = strrchr(buf, ')');
+    if (!end_paren || end_paren[1] != ' ') {
+        return false;
+    }
+
+    // State character is right after ") "
+    return end_paren[2] == 'Z';
+}
+#endif
+
 bool ProcessPriv::checkPid(int pid, ExceptionSink* xsink) {
 #ifdef HAVE_KILL
     // CRITICAL: Validate PID before calling kill()
@@ -1981,7 +2017,17 @@ bool ProcessPriv::checkPid(int pid, ExceptionSink* xsink) {
             "cannot check invalid PID: PID must be positive (got %d)", pid);
         return false;
     }
-    return !kill(pid, 0);
+    if (kill(pid, 0)) {
+        return false;
+    }
+#ifdef __linux__
+    // kill(pid, 0) returns success for zombie processes because the PID still exists
+    // in the process table; check /proc/<pid>/stat for zombie state
+    if (isZombie(pid)) {
+        return false;
+    }
+#endif
+    return true;
 #else
     xsink->raiseException("PROCESS-CHECKPID-UNSUPPORTED-ERROR", "this call is not supported on this platform");
     return false;
@@ -2052,6 +2098,12 @@ void ProcessPriv::waitForTermination(int pid, ExceptionSink* xsink) {
         if (kill(pid, 0)) {
             break;
         }
+#ifdef __linux__
+        // kill(pid, 0) returns success for zombie processes; check /proc/<pid>/stat
+        if (isZombie(pid)) {
+            break;
+        }
+#endif
         usleep(WAIT_POLL_US);
     }
 #else
