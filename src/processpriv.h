@@ -146,6 +146,15 @@ public:
     //! Get child PIDs for a specific PID (static)
     DLLLOCAL static QoreListNode* getChildPids(int pid, ExceptionSink* xsink);
 
+    //! Get command line for a specific PID (static)
+    DLLLOCAL static QoreStringNode* getCommandLine(int pid, ExceptionSink* xsink);
+
+    //! Get PIDs listening on a TCP port (static)
+    DLLLOCAL static QoreListNode* getPidsForPort(int port, ExceptionSink* xsink);
+
+    //! Get PIDs using a Unix domain socket (static)
+    DLLLOCAL static QoreListNode* getPidsForUnixSocket(const char* path, ExceptionSink* xsink);
+
     //! Terminate the process and all its children
     DLLLOCAL bool terminateTree(ExceptionSink* xsink);
 

@@ -1,7 +1,7 @@
 /*
     Qore Programming Language process Module
 
-    Copyright (C) 2003 - 2025 Qore Technologies, s.r.o.
+    Copyright (C) 2003 - 2026 Qore Technologies, s.r.o.
 
     Permission is hereby granted, free of charge, to any person obtaining a
     copy of this software and associated documentation files (the "Software"),
@@ -59,6 +59,32 @@
 #define HAVE_PROCESS_WAITFORTERMINATION 0
 #endif
 
+// getCommandLine: supported wherever Boost ext::cmd works
+// (Linux, macOS, FreeBSD, DragonFly, NetBSD, OpenBSD)
+#if defined(__linux__) || (defined(__APPLE__) && defined(__MACH__)) \
+    || defined(__FreeBSD__) || defined(__DragonFly__) \
+    || defined(__NetBSD__) || defined(__OpenBSD__)
+#define HAVE_PROCESS_GETCOMMANDLINE 1
+#else
+#define HAVE_PROCESS_GETCOMMANDLINE 0
+#endif
+
+// getPidsForPort: supported on Linux, macOS, FreeBSD, DragonFly
+#if defined(__linux__) || (defined(__APPLE__) && defined(__MACH__)) \
+    || defined(__FreeBSD__) || defined(__DragonFly__)
+#define HAVE_PROCESS_GETPIDSFORPORT 1
+#else
+#define HAVE_PROCESS_GETPIDSFORPORT 0
+#endif
+
+// getPidsForUnixSocket: supported on Linux, macOS, FreeBSD, DragonFly
+#if defined(__linux__) || (defined(__APPLE__) && defined(__MACH__)) \
+    || defined(__FreeBSD__) || defined(__DragonFly__)
+#define HAVE_PROCESS_GETPIDSFORUNIXSOCKET 1
+#else
+#define HAVE_PROCESS_GETPIDSFORUNIXSOCKET 0
+#endif
+
 DLLLOCAL extern const TypedHashDecl* hashdeclMemorySummaryInfo;
 DLLLOCAL extern const TypedHashDecl* hashdeclProcessResult;
 DLLLOCAL extern const TypedHashDecl* hashdeclResourceUsageInfo;
@@ -85,6 +111,15 @@ const HAVE_PROCESS_WAITFORTERMINATION = bool(HAVE_PROCESS_WAITFORTERMINATION);
 
 //! Defines if @ref Qore::Process::Process::getDescriptorCount() "Process::getDescriptorCount()" is available
 const HAVE_PROCESS_GETDESCRIPTORCOUNT = bool(HAVE_PROCESS_GETDESCRIPTORCOUNT);
+
+//! Defines if @ref Qore::Process::Process::getCommandLine() "Process::getCommandLine()" is available
+const HAVE_PROCESS_GETCOMMANDLINE = bool(HAVE_PROCESS_GETCOMMANDLINE);
+
+//! Defines if @ref Qore::Process::Process::getPidsForPort() "Process::getPidsForPort()" is available
+const HAVE_PROCESS_GETPIDSFORPORT = bool(HAVE_PROCESS_GETPIDSFORPORT);
+
+//! Defines if @ref Qore::Process::Process::getPidsForUnixSocket() "Process::getPidsForUnixSocket()" is available
+const HAVE_PROCESS_GETPIDSFORUNIXSOCKET = bool(HAVE_PROCESS_GETPIDSFORUNIXSOCKET);
 ///@}
 
 //! A hash of summary memory information as provided by @ref Qore::Process::Process::getMemorySummaryInfo() "Process::getMemorySummaryInfo()"
@@ -1310,4 +1345,96 @@ static hash<ProcessResult> Process::pipeline(softlist<softlist<softstring>> comm
     QoreHashNode* result = ProcessPriv::run(shellCmd->c_str(), nullptr, *opts, 0, xsink);
     shellCmd->deref();
     return result;
+}
+
+//! Returns the command line of a process as a string
+/** @par Example:
+    @code{.py}
+string cmdline = Process::getCommandLine(getpid());
+printf("Current process: %s\n", cmdline);
+    @endcode
+
+    @param pid the PID of the process
+
+    @return the command line of the process as a string with arguments separated by spaces
+
+    @throw PROCESS-GETCOMMANDLINE-ERROR if the command line cannot be read (e.g. process does not exist
+        or insufficient permissions)
+    @throw PROCESS-GETCOMMANDLINE-UNSUPPORTED-ERROR if this method is not available on the current platform
+
+    @note
+    - Supported on Linux, macOS, FreeBSD, DragonFly, NetBSD, and OpenBSD
+    - On all platforms, returns the full command line with arguments separated by spaces
+    - On macOS, may require elevated privileges to read command lines of other users' processes
+    - On FreeBSD/DragonFly/NetBSD/OpenBSD, requires the kvm library
+
+    @see HAVE_PROCESS_GETCOMMANDLINE
+
+    @since process 2.1
+*/
+static string Process::getCommandLine(int pid) [flags=RET_VALUE_ONLY] {
+    return ProcessPriv::getCommandLine(pid, xsink);
+}
+
+//! Returns a list of PIDs that have a listening TCP socket on the given port
+/** @par Example:
+    @code{.py}
+list<int> pids = Process::getPidsForPort(8001);
+if (pids) {
+    printf("Port 8001 is used by PIDs: %y\n", pids);
+}
+    @endcode
+
+    @param port the TCP port number to check (1-65535)
+
+    @return a list of PIDs that are listening on the given port; an empty list if no process is listening
+
+    @throw PROCESS-GETPIDSFORPORT-ERROR if the port is invalid or an error occurs scanning process information
+    @throw PROCESS-GETPIDSFORPORT-UNSUPPORTED-ERROR if this method is not available on the current platform
+
+    @note
+    - On Linux, this scans /proc/net/tcp and /proc/net/tcp6 for listening sockets and matches
+      socket inodes to PIDs via /proc/PID/fd; this works on all Linux variants including Alpine (busybox)
+    - On macOS, this uses native libproc APIs to enumerate process file descriptors and filter for TCP
+      listening sockets; only LISTEN-state sockets are matched
+    - On FreeBSD/DragonFly, this uses sysctl KERN_PROC_FILEDESC to enumerate file descriptors
+    - May require elevated privileges to see sockets of other users' processes
+
+    @see HAVE_PROCESS_GETPIDSFORPORT
+
+    @since process 2.1
+*/
+static list<int> Process::getPidsForPort(int port) [flags=RET_VALUE_ONLY] {
+    return ProcessPriv::getPidsForPort(port, xsink);
+}
+
+//! Returns a list of PIDs that have the given Unix domain socket path open
+/** @par Example:
+    @code{.py}
+list<int> pids = Process::getPidsForUnixSocket("/var/run/app.sock");
+if (pids) {
+    printf("Socket is used by PIDs: %y\n", pids);
+}
+    @endcode
+
+    @param path the Unix domain socket path to check
+
+    @return a list of PIDs that have the given Unix domain socket open; an empty list if no process has it open
+
+    @throw PROCESS-GETPIDSFORUNIXSOCKET-ERROR if the path is empty or an error occurs scanning process information
+    @throw PROCESS-GETPIDSFORUNIXSOCKET-UNSUPPORTED-ERROR if this method is not available on the current platform
+
+    @note
+    - On Linux, this parses /proc/net/unix to find socket inodes matching the path, then scans /proc/PID/fd
+      for matching socket symlinks
+    - On macOS, this uses native libproc APIs to enumerate process file descriptors and match Unix socket paths
+    - On FreeBSD/DragonFly, this uses sysctl KERN_PROC_FILEDESC to enumerate file descriptors
+    - May require elevated privileges to see sockets of other users' processes
+
+    @see HAVE_PROCESS_GETPIDSFORUNIXSOCKET
+
+    @since process 2.1
+*/
+static list<int> Process::getPidsForUnixSocket(string path) [flags=RET_VALUE_ONLY] {
+    return ProcessPriv::getPidsForUnixSocket(path->c_str(), xsink);
 }
