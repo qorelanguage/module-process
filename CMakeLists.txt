@@ -78,6 +78,9 @@ qore_external_binary_module(
 )
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     target_link_libraries(${module_name} PRIVATE Boost::process proc)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD" OR CMAKE_SYSTEM_NAME STREQUAL "DragonFly"
+       OR CMAKE_SYSTEM_NAME STREQUAL "NetBSD" OR CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
+    target_link_libraries(${module_name} PRIVATE Boost::process kvm)
 else()
     target_link_libraries(${module_name} PRIVATE Boost::process)
 endif()

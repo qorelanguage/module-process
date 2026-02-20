@@ -26,14 +26,17 @@
 
 #include <unistd.h>
 #include <dirent.h>
+#include <sched.h>
 
 // std
+#include <chrono>
 #include <exception>
 #include <cctype>
 #include <stdexcept>
 
 // boost
 #include <boost/numeric/conversion/cast.hpp>
+#include <boost/process/v2/ext/cmd.hpp>
 
 // module
 #include "unix-config.h"
@@ -2545,6 +2548,765 @@ bool ProcessPriv::terminateTree(ExceptionSink* xsink) {
     // Just terminate the main process for now; this is equivalent to terminate()
     return terminate(xsink);
 }
+
+QoreStringNode* ProcessPriv::getCommandLine(int pid, ExceptionSink* xsink) {
+    if (pid <= 0) {
+        xsink->raiseException("PROCESS-GETCOMMANDLINE-ERROR", "PID must be positive (got %d)", pid);
+        return nullptr;
+    }
+
+    // Retry on empty result: when a process is launched via a shebang script (e.g. #!/usr/bin/env qore),
+    // the kernel performs two exec() calls.  The CLOEXEC pipe (boost::process startup sync) closes on the
+    // first exec, but /proc/PID/cmdline is transiently empty during the second exec.  The empty window
+    // lasts for the kernel's execve() processing time (typically <1ms, but potentially longer under heavy
+    // load or with cold caches).  We use a wall-clock-bounded retry with exponential backoff to handle
+    // this reliably regardless of CPU speed or system load.
+    constexpr int64_t timeout_us = 5'000'000;  // 5 second total timeout
+    constexpr int yield_attempts = 10;          // initial fast sched_yield attempts
+    constexpr int64_t initial_sleep_us = 1000;  // 1ms initial sleep after yields
+    constexpr int64_t max_sleep_us = 100'000;   // 100ms max sleep interval
+
+    auto start = std::chrono::steady_clock::now();
+    int attempt = 0;
+
+    while (true) {
+        boost::system::error_code ec;
+        auto sh = boost::process::v2::ext::cmd(pid, ec);
+        if (ec) {
+            if (ec.value() == ENOTSUP) {
+                xsink->raiseException("PROCESS-GETCOMMANDLINE-UNSUPPORTED-ERROR",
+                    "getCommandLine() is not supported on this platform");
+            } else {
+                xsink->raiseException("PROCESS-GETCOMMANDLINE-ERROR",
+                    "cannot get command line for PID %d: %s", pid, ec.message().c_str());
+            }
+            return nullptr;
+        }
+
+        if (!sh.empty()) {
+            SimpleRefHolder<QoreStringNode> rv(new QoreStringNode(sh.argv()[0]));
+            for (int i = 1; i < sh.argc(); ++i) {
+                rv->concat(' ');
+                rv->concat(sh.argv()[i]);
+            }
+            return rv.release();
+        }
+
+        // Empty result - check timeout
+        auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - start).count();
+        if (elapsed >= timeout_us) {
+            xsink->raiseException("PROCESS-GETCOMMANDLINE-ERROR",
+                "empty command line for PID %d (timed out after %g seconds)", pid,
+                static_cast<double>(elapsed) / 1'000'000.0);
+            return nullptr;
+        }
+
+        // Check if the process still exists before retrying
+        if (kill(pid, 0) != 0) {
+            xsink->raiseException("PROCESS-GETCOMMANDLINE-ERROR",
+                "cannot get command line for PID %d: process no longer exists", pid);
+            return nullptr;
+        }
+
+        if (attempt < yield_attempts) {
+            // Fast path: sched_yield() for the common case where exec completes in microseconds
+            sched_yield();
+        } else {
+            // Exponential backoff: 1ms, 2ms, 4ms, ..., capped at 100ms
+            int64_t sleep_us = std::min(initial_sleep_us << (attempt - yield_attempts), max_sleep_us);
+            int64_t remaining_us = timeout_us - elapsed;
+            sleep_us = std::min(sleep_us, remaining_us);
+            struct timespec ts = {0, sleep_us * 1000};
+            nanosleep(&ts, nullptr);
+        }
+        ++attempt;
+    }
+}
+
+#if defined(__linux__)
+QoreListNode* ProcessPriv::getPidsForPort(int port, ExceptionSink* xsink) {
+    if (port <= 0 || port > 65535) {
+        xsink->raiseException("PROCESS-GETPIDSFORPORT-ERROR",
+            "port must be between 1 and 65535 (got %d)", port);
+        return nullptr;
+    }
+
+    char hex_port[16];
+    snprintf(hex_port, sizeof(hex_port), "%04X", port);
+
+    // Collect socket inodes for LISTEN sockets on this port from /proc/net/tcp and tcp6
+    std::unordered_map<std::string, bool> target_inodes;
+
+    const char* tcp_files[] = {"/proc/net/tcp", "/proc/net/tcp6"};
+    for (const char* tcp_file : tcp_files) {
+        QoreFile f;
+        if (f.open(tcp_file)) {
+            continue;
+        }
+
+        QoreStringNodeHolder content(f.read(-1, -1, xsink));
+        if (*xsink) {
+            xsink->clear();
+            continue;
+        }
+        if (!content || !content->size()) {
+            continue;
+        }
+
+        // Parse each line
+        const char* p = content->c_str();
+        while (*p) {
+            // Find end of line
+            const char* eol = strchr(p, '\n');
+            if (!eol) {
+                eol = p + strlen(p);
+            }
+
+            // Skip header line
+            const char* line = p;
+            p = (*eol) ? eol + 1 : eol;
+
+            // Skip leading whitespace
+            while (line < eol && (*line == ' ' || *line == '\t')) {
+                ++line;
+            }
+            // Skip header
+            if (line < eol && (*line == 's' || *line == 'S')) {
+                continue;
+            }
+
+            // Parse fields: we need field[1] (local_address), field[3] (state), field[9] (inode)
+            // Fields are whitespace-separated
+            const char* fields[12];
+            int nfields = 0;
+            const char* fp = line;
+            while (fp < eol && nfields < 12) {
+                // Skip whitespace
+                while (fp < eol && (*fp == ' ' || *fp == '\t')) {
+                    ++fp;
+                }
+                if (fp >= eol) {
+                    break;
+                }
+                fields[nfields++] = fp;
+                // Skip non-whitespace
+                while (fp < eol && *fp != ' ' && *fp != '\t') {
+                    ++fp;
+                }
+            }
+
+            if (nfields < 10) {
+                continue;
+            }
+
+            // Check state == "0A" (LISTEN)
+            if (fields[3][0] != '0' || (fields[3][1] != 'A' && fields[3][1] != 'a')) {
+                continue;
+            }
+
+            // Check local_address ends with :HEXPORT
+            // local_address format: HEXIP:HEXPORT
+            const char* colon = nullptr;
+            {
+                const char* fp2 = fields[1];
+                while (fp2 < fields[2] && *fp2 != ' ' && *fp2 != '\t') {
+                    if (*fp2 == ':') {
+                        colon = fp2;
+                    }
+                    ++fp2;
+                }
+            }
+            if (!colon) {
+                continue;
+            }
+            // Compare hex port (case-insensitive)
+            if (strncasecmp(colon + 1, hex_port, 4) != 0) {
+                continue;
+            }
+
+            // Get inode (field 9)
+            std::string inode(fields[9]);
+            // Trim to just the field
+            {
+                size_t end = inode.find_first_of(" \t\n");
+                if (end != std::string::npos) {
+                    inode.erase(end);
+                }
+            }
+            if (inode != "0") {
+                target_inodes[inode] = true;
+            }
+        }
+    }
+
+    ReferenceHolder<QoreListNode> rv(new QoreListNode(bigIntTypeInfo), xsink);
+
+    if (target_inodes.empty()) {
+        return rv.release();
+    }
+
+    // Scan /proc/<pid>/fd to find PIDs with matching socket inodes
+    DIR* procdir = opendir("/proc");
+    if (!procdir) {
+        xsink->raiseErrnoException("PROCESS-GETPIDSFORPORT-ERROR", errno, "cannot open /proc");
+        return nullptr;
+    }
+
+    std::unordered_map<int, bool> found_pids;
+    struct dirent* entry;
+    while ((entry = readdir(procdir)) != nullptr) {
+        // Check if entry is a PID directory
+        char* endptr;
+        long pid_val = strtol(entry->d_name, &endptr, 10);
+        if (*endptr != '\0' || pid_val <= 0) {
+            continue;
+        }
+
+        QoreStringMaker fd_path("/proc/%ld/fd", pid_val);
+        DIR* fddir = opendir(fd_path.c_str());
+        if (!fddir) {
+            continue;
+        }
+
+        struct dirent* fd_entry;
+        bool found = false;
+        while ((fd_entry = readdir(fddir)) != nullptr) {
+            QoreStringMaker link_path("%s/%s", fd_path.c_str(), fd_entry->d_name);
+            char target[256];
+            ssize_t len = readlink(link_path.c_str(), target, sizeof(target) - 1);
+            if (len <= 0) {
+                continue;
+            }
+            target[len] = '\0';
+
+            // Check for "socket:[INODE]"
+            if (strncmp(target, "socket:[", 8) != 0) {
+                continue;
+            }
+            // Extract inode number
+            char* inode_start = target + 8;
+            char* inode_end = strchr(inode_start, ']');
+            if (!inode_end) {
+                continue;
+            }
+            std::string inode(inode_start, inode_end - inode_start);
+            if (target_inodes.count(inode)) {
+                found = true;
+                break;
+            }
+        }
+        closedir(fddir);
+
+        if (found) {
+            found_pids[(int)pid_val] = true;
+        }
+    }
+    closedir(procdir);
+
+    for (const auto& kv : found_pids) {
+        rv->push((int64)kv.first, xsink);
+    }
+
+    return rv.release();
+}
+#elif defined(__APPLE__) && defined(__MACH__)
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <arpa/inet.h>
+#include <sys/proc_info.h>
+
+QoreListNode* ProcessPriv::getPidsForPort(int port, ExceptionSink* xsink) {
+    if (port <= 0 || port > 65535) {
+        xsink->raiseException("PROCESS-GETPIDSFORPORT-ERROR",
+            "port must be between 1 and 65535 (got %d)", port);
+        return nullptr;
+    }
+
+    ReferenceHolder<QoreListNode> rv(new QoreListNode(bigIntTypeInfo), xsink);
+
+    // Get list of all PIDs
+    int numPids = proc_listpids(PROC_ALL_PIDS, 0, nullptr, 0);
+    if (numPids <= 0) {
+        return rv.release();
+    }
+
+    std::vector<pid_t> pids(numPids);
+    numPids = proc_listpids(PROC_ALL_PIDS, 0, pids.data(), numPids * sizeof(pid_t));
+    numPids /= sizeof(pid_t);
+
+    std::unordered_map<int, bool> found_pids;
+
+    for (int i = 0; i < numPids; i++) {
+        if (pids[i] == 0) {
+            continue;
+        }
+
+        // Get file descriptor list for this PID
+        int bufsize = proc_pidinfo(pids[i], PROC_PIDLISTFDS, 0, nullptr, 0);
+        if (bufsize <= 0) {
+            continue;
+        }
+
+        std::vector<char> buf(bufsize);
+        int actual = proc_pidinfo(pids[i], PROC_PIDLISTFDS, 0, buf.data(), bufsize);
+        if (actual <= 0) {
+            continue;
+        }
+
+        int numFds = actual / sizeof(struct proc_fdinfo);
+        struct proc_fdinfo* fdinfo = reinterpret_cast<struct proc_fdinfo*>(buf.data());
+
+        for (int j = 0; j < numFds; j++) {
+            if (fdinfo[j].proc_fdtype != PROX_FDTYPE_SOCKET) {
+                continue;
+            }
+
+            struct socket_fdinfo si;
+            int siSize = proc_pidfdinfo(pids[i], fdinfo[j].proc_fd,
+                PROC_PIDFDSOCKETINFO, &si, sizeof(si));
+            if (siSize != sizeof(si)) {
+                continue;
+            }
+
+            // Check for TCP socket in LISTEN state on the target port
+            if ((si.psi.soi_family == AF_INET || si.psi.soi_family == AF_INET6)
+                && si.psi.soi_kind == SOCKINFO_TCP
+                && si.psi.soi_proto.pri_tcp.tcpsi_state == TSI_S_LISTEN
+                && ntohs(si.psi.soi_proto.pri_tcp.tcpsi_ini.insi_lport) == port) {
+                if (!found_pids.count(pids[i])) {
+                    found_pids[pids[i]] = true;
+                }
+                break;
+            }
+        }
+    }
+
+    for (const auto& kv : found_pids) {
+        rv->push((int64)kv.first, xsink);
+    }
+
+    return rv.release();
+}
+#elif defined(__FreeBSD__) || defined(__DragonFly__)
+#include <sys/types.h>
+#include <sys/sysctl.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <sys/user.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
+QoreListNode* ProcessPriv::getPidsForPort(int port, ExceptionSink* xsink) {
+    if (port <= 0 || port > 65535) {
+        xsink->raiseException("PROCESS-GETPIDSFORPORT-ERROR",
+            "port must be between 1 and 65535 (got %d)", port);
+        return nullptr;
+    }
+
+    ReferenceHolder<QoreListNode> rv(new QoreListNode(bigIntTypeInfo), xsink);
+
+    // Get list of all processes
+    int mib_procs[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PROC, 0};
+    size_t procs_len = 0;
+    if (sysctl(mib_procs, 3, nullptr, &procs_len, nullptr, 0) < 0) {
+        return rv.release();
+    }
+
+    std::vector<char> procs_buf(procs_len);
+    if (sysctl(mib_procs, 3, procs_buf.data(), &procs_len, nullptr, 0) < 0) {
+        return rv.release();
+    }
+
+    int num_procs = procs_len / sizeof(struct kinfo_proc);
+    struct kinfo_proc* procs = reinterpret_cast<struct kinfo_proc*>(procs_buf.data());
+
+    std::unordered_map<int, bool> found_pids;
+
+    for (int i = 0; i < num_procs; i++) {
+        pid_t pid = procs[i].ki_pid;
+        if (pid <= 0) {
+            continue;
+        }
+
+        // Get file descriptors for this PID
+        int mib_fd[4] = {CTL_KERN, KERN_PROC, KERN_PROC_FILEDESC, pid};
+        size_t fd_len = 0;
+        if (sysctl(mib_fd, 4, nullptr, &fd_len, nullptr, 0) < 0) {
+            continue;
+        }
+
+        std::vector<char> fd_buf(fd_len);
+        if (sysctl(mib_fd, 4, fd_buf.data(), &fd_len, nullptr, 0) < 0) {
+            continue;
+        }
+
+        // Iterate over kinfo_file entries (variable-length)
+        char* p = fd_buf.data();
+        char* end = p + fd_len;
+        while (p < end) {
+            struct kinfo_file* kf = reinterpret_cast<struct kinfo_file*>(p);
+            if (kf->kf_structsize == 0) {
+                break;
+            }
+
+            if (kf->kf_type == KF_TYPE_SOCKET
+                && (kf->kf_sock_domain == AF_INET || kf->kf_sock_domain == AF_INET6)
+                && kf->kf_sock_type == SOCK_STREAM) {
+                // Check for LISTEN state
+                // On FreeBSD, kf_sock_protocol == IPPROTO_TCP and kf_un.kf_sock.kf_sock_sendq == 0
+                // for listening sockets; check local port via kf_sa_local
+                struct sockaddr* sa = reinterpret_cast<struct sockaddr*>(&kf->kf_sa_local);
+                int local_port = 0;
+                if (sa->sa_family == AF_INET) {
+                    local_port = ntohs(reinterpret_cast<struct sockaddr_in*>(sa)->sin_port);
+                } else if (sa->sa_family == AF_INET6) {
+                    local_port = ntohs(reinterpret_cast<struct sockaddr_in6*>(sa)->sin6_port);
+                }
+
+                if (local_port == port) {
+                    // Verify this is a listening socket by checking the peer port is 0
+                    struct sockaddr* peer = reinterpret_cast<struct sockaddr*>(&kf->kf_sa_peer);
+                    int peer_port = -1;
+                    if (peer->sa_family == AF_INET) {
+                        peer_port = ntohs(reinterpret_cast<struct sockaddr_in*>(peer)->sin_port);
+                    } else if (peer->sa_family == AF_INET6) {
+                        peer_port = ntohs(reinterpret_cast<struct sockaddr_in6*>(peer)->sin6_port);
+                    }
+
+                    if (peer_port == 0 && !found_pids.count(pid)) {
+                        found_pids[pid] = true;
+                    }
+                }
+            }
+
+            p += kf->kf_structsize;
+        }
+    }
+
+    for (const auto& kv : found_pids) {
+        rv->push((int64)kv.first, xsink);
+    }
+
+    return rv.release();
+}
+#else
+QoreListNode* ProcessPriv::getPidsForPort(int port, ExceptionSink* xsink) {
+    xsink->raiseException("PROCESS-GETPIDSFORPORT-UNSUPPORTED-ERROR",
+        "getPidsForPort() is not supported on this platform");
+    return nullptr;
+}
+#endif
+
+#if defined(__linux__)
+QoreListNode* ProcessPriv::getPidsForUnixSocket(const char* path, ExceptionSink* xsink) {
+    if (!path || !*path) {
+        xsink->raiseException("PROCESS-GETPIDSFORUNIXSOCKET-ERROR", "socket path must not be empty");
+        return nullptr;
+    }
+
+    // Parse /proc/net/unix to find inode(s) for the target socket path
+    std::unordered_map<std::string, bool> target_inodes;
+
+    {
+        QoreFile f;
+        if (f.open("/proc/net/unix")) {
+            // If we can't open /proc/net/unix, return empty list
+            return new QoreListNode(bigIntTypeInfo);
+        }
+
+        QoreStringNodeHolder content(f.read(-1, -1, xsink));
+        if (*xsink) {
+            return nullptr;
+        }
+        if (!content || !content->size()) {
+            return new QoreListNode(bigIntTypeInfo);
+        }
+
+        // Format: Num RefCount Protocol Flags Type St Inode Path
+        const char* p = content->c_str();
+        while (*p) {
+            const char* eol = strchr(p, '\n');
+            if (!eol) {
+                eol = p + strlen(p);
+            }
+
+            const char* line = p;
+            p = (*eol) ? eol + 1 : eol;
+
+            // Skip leading whitespace
+            while (line < eol && (*line == ' ' || *line == '\t')) {
+                ++line;
+            }
+            // Skip header line
+            if (line < eol && (*line == 'N' || *line == 'n')) {
+                continue;
+            }
+
+            // Parse fields: we need field[6] (inode) and field[7] (path)
+            const char* fields[8] = {};
+            int nfields = 0;
+            const char* fp = line;
+            while (fp < eol && nfields < 8) {
+                while (fp < eol && (*fp == ' ' || *fp == '\t')) {
+                    ++fp;
+                }
+                if (fp >= eol) {
+                    break;
+                }
+                fields[nfields++] = fp;
+                while (fp < eol && *fp != ' ' && *fp != '\t') {
+                    ++fp;
+                }
+            }
+
+            // Need at least 8 fields (with path)
+            if (nfields < 8) {
+                continue;
+            }
+
+            // Extract path field (field[7] to end of line)
+            std::string sock_path(fields[7], eol - fields[7]);
+            // Trim trailing whitespace
+            while (!sock_path.empty() && (sock_path.back() == ' ' || sock_path.back() == '\t'
+                    || sock_path.back() == '\n')) {
+                sock_path.pop_back();
+            }
+
+            if (sock_path == path) {
+                // Extract inode (field[6])
+                std::string inode(fields[6]);
+                size_t end = inode.find_first_of(" \t\n");
+                if (end != std::string::npos) {
+                    inode.erase(end);
+                }
+                if (inode != "0") {
+                    target_inodes[inode] = true;
+                }
+            }
+        }
+    }
+
+    ReferenceHolder<QoreListNode> rv(new QoreListNode(bigIntTypeInfo), xsink);
+
+    if (target_inodes.empty()) {
+        return rv.release();
+    }
+
+    // Scan /proc/<pid>/fd to find PIDs with matching socket inodes
+    DIR* procdir = opendir("/proc");
+    if (!procdir) {
+        xsink->raiseErrnoException("PROCESS-GETPIDSFORUNIXSOCKET-ERROR", errno, "cannot open /proc");
+        return nullptr;
+    }
+
+    std::unordered_map<int, bool> found_pids;
+    struct dirent* entry;
+    while ((entry = readdir(procdir)) != nullptr) {
+        char* endptr;
+        long pid_val = strtol(entry->d_name, &endptr, 10);
+        if (*endptr != '\0' || pid_val <= 0) {
+            continue;
+        }
+
+        QoreStringMaker fd_path("/proc/%ld/fd", pid_val);
+        DIR* fddir = opendir(fd_path.c_str());
+        if (!fddir) {
+            continue;
+        }
+
+        struct dirent* fd_entry;
+        bool found = false;
+        while ((fd_entry = readdir(fddir)) != nullptr) {
+            QoreStringMaker link_path("%s/%s", fd_path.c_str(), fd_entry->d_name);
+            char target[256];
+            ssize_t len = readlink(link_path.c_str(), target, sizeof(target) - 1);
+            if (len <= 0) {
+                continue;
+            }
+            target[len] = '\0';
+
+            // Check for "socket:[INODE]"
+            if (strncmp(target, "socket:[", 8) != 0) {
+                continue;
+            }
+            char* inode_start = target + 8;
+            char* inode_end = strchr(inode_start, ']');
+            if (!inode_end) {
+                continue;
+            }
+            std::string inode(inode_start, inode_end - inode_start);
+            if (target_inodes.count(inode)) {
+                found = true;
+                break;
+            }
+        }
+        closedir(fddir);
+
+        if (found) {
+            found_pids[(int)pid_val] = true;
+        }
+    }
+    closedir(procdir);
+
+    for (const auto& kv : found_pids) {
+        rv->push((int64)kv.first, xsink);
+    }
+
+    return rv.release();
+}
+#elif defined(__APPLE__) && defined(__MACH__)
+QoreListNode* ProcessPriv::getPidsForUnixSocket(const char* path, ExceptionSink* xsink) {
+    if (!path || !*path) {
+        xsink->raiseException("PROCESS-GETPIDSFORUNIXSOCKET-ERROR", "socket path must not be empty");
+        return nullptr;
+    }
+
+    ReferenceHolder<QoreListNode> rv(new QoreListNode(bigIntTypeInfo), xsink);
+
+    // Get list of all PIDs
+    int numPids = proc_listpids(PROC_ALL_PIDS, 0, nullptr, 0);
+    if (numPids <= 0) {
+        return rv.release();
+    }
+
+    std::vector<pid_t> pids(numPids);
+    numPids = proc_listpids(PROC_ALL_PIDS, 0, pids.data(), numPids * sizeof(pid_t));
+    numPids /= sizeof(pid_t);
+
+    std::unordered_map<int, bool> found_pids;
+
+    for (int i = 0; i < numPids; i++) {
+        if (pids[i] == 0) {
+            continue;
+        }
+
+        // Get file descriptor list for this PID
+        int bufsize = proc_pidinfo(pids[i], PROC_PIDLISTFDS, 0, nullptr, 0);
+        if (bufsize <= 0) {
+            continue;
+        }
+
+        std::vector<char> buf(bufsize);
+        int actual = proc_pidinfo(pids[i], PROC_PIDLISTFDS, 0, buf.data(), bufsize);
+        if (actual <= 0) {
+            continue;
+        }
+
+        int numFds = actual / sizeof(struct proc_fdinfo);
+        struct proc_fdinfo* fdinfo = reinterpret_cast<struct proc_fdinfo*>(buf.data());
+
+        for (int j = 0; j < numFds; j++) {
+            if (fdinfo[j].proc_fdtype != PROX_FDTYPE_SOCKET) {
+                continue;
+            }
+
+            struct socket_fdinfo si;
+            int siSize = proc_pidfdinfo(pids[i], fdinfo[j].proc_fd,
+                PROC_PIDFDSOCKETINFO, &si, sizeof(si));
+            if (siSize != sizeof(si)) {
+                continue;
+            }
+
+            // Check for Unix domain socket matching the target path
+            if (si.psi.soi_family == AF_UNIX && si.psi.soi_kind == SOCKINFO_UN) {
+                const char* sock_path = si.psi.soi_proto.pri_un.unsi_addr.ua_sun.sun_path;
+                if (sock_path[0] != '\0' && strcmp(sock_path, path) == 0) {
+                    if (!found_pids.count(pids[i])) {
+                        found_pids[pids[i]] = true;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    for (const auto& kv : found_pids) {
+        rv->push((int64)kv.first, xsink);
+    }
+
+    return rv.release();
+}
+#elif defined(__FreeBSD__) || defined(__DragonFly__)
+QoreListNode* ProcessPriv::getPidsForUnixSocket(const char* path, ExceptionSink* xsink) {
+    if (!path || !*path) {
+        xsink->raiseException("PROCESS-GETPIDSFORUNIXSOCKET-ERROR", "socket path must not be empty");
+        return nullptr;
+    }
+
+    ReferenceHolder<QoreListNode> rv(new QoreListNode(bigIntTypeInfo), xsink);
+
+    // Get list of all processes
+    int mib_procs[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PROC, 0};
+    size_t procs_len = 0;
+    if (sysctl(mib_procs, 3, nullptr, &procs_len, nullptr, 0) < 0) {
+        return rv.release();
+    }
+
+    std::vector<char> procs_buf(procs_len);
+    if (sysctl(mib_procs, 3, procs_buf.data(), &procs_len, nullptr, 0) < 0) {
+        return rv.release();
+    }
+
+    int num_procs = procs_len / sizeof(struct kinfo_proc);
+    struct kinfo_proc* procs = reinterpret_cast<struct kinfo_proc*>(procs_buf.data());
+
+    std::unordered_map<int, bool> found_pids;
+
+    for (int i = 0; i < num_procs; i++) {
+        pid_t pid = procs[i].ki_pid;
+        if (pid <= 0) {
+            continue;
+        }
+
+        // Get file descriptors for this PID
+        int mib_fd[4] = {CTL_KERN, KERN_PROC, KERN_PROC_FILEDESC, pid};
+        size_t fd_len = 0;
+        if (sysctl(mib_fd, 4, nullptr, &fd_len, nullptr, 0) < 0) {
+            continue;
+        }
+
+        std::vector<char> fd_buf(fd_len);
+        if (sysctl(mib_fd, 4, fd_buf.data(), &fd_len, nullptr, 0) < 0) {
+            continue;
+        }
+
+        char* p = fd_buf.data();
+        char* end = p + fd_len;
+        while (p < end) {
+            struct kinfo_file* kf = reinterpret_cast<struct kinfo_file*>(p);
+            if (kf->kf_structsize == 0) {
+                break;
+            }
+
+            if (kf->kf_type == KF_TYPE_SOCKET
+                && kf->kf_sock_domain == AF_UNIX) {
+                // Check socket path via kf_path
+                if (kf->kf_path[0] != '\0' && strcmp(kf->kf_path, path) == 0) {
+                    if (!found_pids.count(pid)) {
+                        found_pids[pid] = true;
+                    }
+                    break;
+                }
+            }
+
+            p += kf->kf_structsize;
+        }
+    }
+
+    for (const auto& kv : found_pids) {
+        rv->push((int64)kv.first, xsink);
+    }
+
+    return rv.release();
+}
+#else
+QoreListNode* ProcessPriv::getPidsForUnixSocket(const char* path, ExceptionSink* xsink) {
+    xsink->raiseException("PROCESS-GETPIDSFORUNIXSOCKET-UNSUPPORTED-ERROR",
+        "getPidsForUnixSocket() is not supported on this platform");
+    return nullptr;
+}
+#endif
 
 QoreHashNode* ProcessPriv::run(const char* command, const QoreListNode* arguments,
         const QoreHashNode* opts, int64 timeout_ms, ExceptionSink* xsink) {
