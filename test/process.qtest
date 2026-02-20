@@ -1139,22 +1139,16 @@ public class Main inherits QUnit::Test {
         hash<auto> opts = {"path": (m_prefix,)};
         Process p("test_io.q", opts);
 
+        # test_io.q protocol: readLine (line 1), readLine (line 2), sleep 2s, readLine (exit code)
         binary data = <00010203040500060708>;  # Binary with NUL in middle
         p.write(data);
-        p.write("\n");
+        p.write("\n");       # first line: binary data with NUL
+        p.write("test\n");   # second line expected by test_io.q
+        p.write("0\n");      # third line: exit code
 
-        # Read back - note: the test_io.q reads a line, so NUL will terminate
-        # This tests that write(binary) handles NUL correctly
-        sleep(500ms);
-        p.readStdoutBinary(100);
-        # The actual behavior depends on how the child process handles binary
-        # Just verify it doesn't crash
-        assertGe(0, p.id(), "Binary with NUL should not crash");
-
-        p.write("0\n");
-        if (!p.wait(10s)) {
-            p.terminate();
-        }
+        # Wait for child to exit (test_io.q has a 2s internal sleep)
+        assertTrue(p.wait(15s), "Binary with NUL should not hang");
+        assertEq(0, p.exitCode(), "Binary with NUL should not crash");
     }
 
     runTest() {

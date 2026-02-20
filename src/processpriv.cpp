@@ -2614,10 +2614,13 @@ QoreStringNode* ProcessPriv::getCommandLine(int pid, ExceptionSink* xsink) {
             sched_yield();
         } else {
             // Exponential backoff: 1ms, 2ms, 4ms, ..., capped at 100ms
-            int64_t sleep_us = std::min(initial_sleep_us << (attempt - yield_attempts), max_sleep_us);
+            int shift = std::min(attempt - yield_attempts, 20);  // cap shift to prevent UB
+            int64_t sleep_us = std::min(initial_sleep_us << shift, max_sleep_us);
             int64_t remaining_us = timeout_us - elapsed;
             sleep_us = std::min(sleep_us, remaining_us);
-            struct timespec ts = {0, sleep_us * 1000};
+            time_t sec = static_cast<time_t>(sleep_us / 1'000'000);
+            long nsec = static_cast<long>((sleep_us % 1'000'000) * 1000);
+            struct timespec ts = {sec, nsec};
             nanosleep(&ts, nullptr);
         }
         ++attempt;
