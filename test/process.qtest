@@ -119,6 +119,9 @@ public class Main inherits QUnit::Test {
         addTestCase("Terminate tree test", \terminateTreeTest());
         addTestCase("Pipeline test", \pipelineTest());
         addTestCase("Resource limits test", \resourceLimitsTest());
+        addTestCase("getCommandLine test", \getCommandLineTest());
+        addTestCase("getPidsForPort test", \getPidsForPortTest());
+        addTestCase("getPidsForUnixSocket test", \getPidsForUnixSocketTest());
 
         # Return for compatibility with test harness that checks return value.
         set_return_value(main());
@@ -319,9 +322,9 @@ public class Main inherits QUnit::Test {
         string b1;
         # sleep to make sure that there is some stdout data ready
         while (True) {
-            *string str = p.readStdout(1);
-            if (str) {
-                b1 = str;
+            *string rd = p.readStdout(1);
+            if (rd) {
+                b1 = rd;
                 break;
             }
             usleep(50ms);
@@ -378,9 +381,9 @@ public class Main inherits QUnit::Test {
         p = new Process("test_utf8.q", opts);
         # read 1 byte of stdout
         while (True) {
-            *string str = p.readStdout(1);
-            if (str) {
-                b1 = str;
+            *string rd = p.readStdout(1);
+            if (rd) {
+                b1 = rd;
                 break;
             }
             usleep(50ms);
@@ -1136,22 +1139,16 @@ public class Main inherits QUnit::Test {
         hash<auto> opts = {"path": (m_prefix,)};
         Process p("test_io.q", opts);
 
+        # test_io.q protocol: readLine (line 1), readLine (line 2), sleep 2s, readLine (exit code)
         binary data = <00010203040500060708>;  # Binary with NUL in middle
         p.write(data);
-        p.write("\n");
+        p.write("\n");       # first line: binary data with NUL
+        p.write("test\n");   # second line expected by test_io.q
+        p.write("0\n");      # third line: exit code
 
-        # Read back - note: the test_io.q reads a line, so NUL will terminate
-        # This tests that write(binary) handles NUL correctly
-        sleep(500ms);
-        *binary out = p.readStdoutBinary(100);
-        # The actual behavior depends on how the child process handles binary
-        # Just verify it doesn't crash
-        assertTrue(True, "Binary with NUL should not crash");
-
-        p.write("0\n");
-        if (!p.wait(10s)) {
-            p.terminate();
-        }
+        # Wait for child to exit (test_io.q has a 2s internal sleep)
+        assertTrue(p.wait(15s), "Binary with NUL should not hang");
+        assertEq(0, p.exitCode(), "Binary with NUL should not crash");
     }
 
     runTest() {
@@ -1475,6 +1472,116 @@ public class Main inherits QUnit::Test {
             }});
             p.wait();
             assertEq(0, p.exitCode(), "process with multiple limits should succeed");
+        }
+    }
+
+    getCommandLineTest() {
+        if (HAVE_PROCESS_GETCOMMANDLINE) {
+            # Test getting command line for current process
+            {
+                string cmdline = Process::getCommandLine(getpid());
+                assertTrue(cmdline.size() > 0, "command line should not be empty");
+                # The command line should contain "qore" since we're running a qore script
+                assertTrue(cmdline.find("qore") >= 0,
+                    sprintf("command line should contain 'qore' (got '%s')", cmdline));
+            }
+
+            # Test getting command line for a child process with known arguments
+            {
+                Process p(getTestValue("testSleep"), (5,), {"path": (m_prefix,)});
+                string cmdline = Process::getCommandLine(p.id());
+                assertTrue(cmdline.size() > 0, "child command line should not be empty");
+                # The command line should contain the test script name
+                assertTrue(cmdline.find("test_sleep") >= 0,
+                    sprintf("child command line should contain 'test_sleep' (got '%s')", cmdline));
+                # The command line should contain the argument "5"
+                assertTrue(cmdline.find("5") >= 0,
+                    sprintf("child command line should contain argument '5' (got '%s')", cmdline));
+                p.terminate();
+            }
+
+            # Negative: invalid PID
+            assertThrows("PROCESS-GETCOMMANDLINE-ERROR", \Process::getCommandLine(), -1);
+
+            # Negative: nonexistent PID
+            assertThrows("PROCESS-GETCOMMANDLINE-ERROR", \Process::getCommandLine(), 999999999);
+        } else {
+            assertThrows("PROCESS-GETCOMMANDLINE-UNSUPPORTED-ERROR", \Process::getCommandLine(), 1);
+        }
+    }
+
+    getPidsForPortTest() {
+        if (HAVE_PROCESS_GETPIDSFORPORT) {
+            # Test with a TCP listener on a known port
+            {
+                Socket s();
+                # Bind to an ephemeral port
+                s.bind("localhost:0");
+                s.listen();
+                int port = s.getSocketInfo().port;
+                assertTrue(port > 0, sprintf("bind should assign a port (got %d)", port));
+
+                list<int> pids = Process::getPidsForPort(port);
+                assertTrue(pids.size() > 0,
+                    sprintf("should find at least one PID for port %d (got %y)", port, pids));
+                assertTrue(inlist(getpid(), pids),
+                    sprintf("current PID %d should be in the list for port %d (got %y)",
+                        getpid(), port, pids));
+            }
+
+            # Test unused port returns empty list
+            {
+                # Use a high ephemeral port that's very unlikely to be in use
+                list<int> pids = Process::getPidsForPort(59999);
+                # This might not be empty if something is actually listening, so just check type
+                assertTrue(exists pids, "should return a list");
+            }
+
+            # Negative: invalid port 0
+            assertThrows("PROCESS-GETPIDSFORPORT-ERROR", \Process::getPidsForPort(), 0);
+
+            # Negative: invalid port -1
+            assertThrows("PROCESS-GETPIDSFORPORT-ERROR", \Process::getPidsForPort(), -1);
+
+            # Negative: invalid port > 65535
+            assertThrows("PROCESS-GETPIDSFORPORT-ERROR", \Process::getPidsForPort(), 99999);
+        } else {
+            assertThrows("PROCESS-GETPIDSFORPORT-UNSUPPORTED-ERROR", \Process::getPidsForPort(), 80);
+        }
+    }
+
+    getPidsForUnixSocketTest() {
+        if (HAVE_PROCESS_GETPIDSFORUNIXSOCKET) {
+            # Test with a Unix domain socket listener
+            {
+                string sock_path = tmp_location() + DirSep + "process_test_" + get_random_string() + ".sock";
+                on_exit {
+                    try { unlink(sock_path); } catch () {}
+                }
+
+                Socket s();
+                s.bindUNIX(sock_path, SOCK_STREAM);
+                s.listen();
+
+                list<int> pids = Process::getPidsForUnixSocket(sock_path);
+                assertTrue(pids.size() > 0,
+                    sprintf("should find at least one PID for socket %s (got %y)", sock_path, pids));
+                assertTrue(inlist(getpid(), pids),
+                    sprintf("current PID %d should be in the list for socket %s (got %y)",
+                        getpid(), sock_path, pids));
+            }
+
+            # Test non-existent socket path returns empty list
+            {
+                list<int> pids = Process::getPidsForUnixSocket("/tmp/nonexistent_socket_path_12345.sock");
+                assertEq(0, pids.size(), "non-existent socket should return empty list");
+            }
+
+            # Negative: empty path
+            assertThrows("PROCESS-GETPIDSFORUNIXSOCKET-ERROR", \Process::getPidsForUnixSocket(), "");
+        } else {
+            assertThrows("PROCESS-GETPIDSFORUNIXSOCKET-UNSUPPORTED-ERROR",
+                \Process::getPidsForUnixSocket(), "/tmp/test.sock");
         }
     }
 }

@@ -175,7 +175,7 @@ shell cmd(boost::process::v2::pid_type pid, error_code & ec)
 
     std::string procargs;
     procargs.resize(argmax - 1);
-    mib[1] = KERN_PROCARGS;
+    mib[1] = KERN_PROCARGS2;
     mib[2] = pid;
 
     size = argmax;
@@ -186,27 +186,46 @@ shell cmd(boost::process::v2::pid_type pid, error_code & ec)
         return {};
     }
 
+    // KERN_PROCARGS2 format: [argc (int)][exec_path\0][padding \0s][argv[0]\0]...[argv[argc-1]\0][env...]
     int argc = *reinterpret_cast<const int*>(procargs.data());
     auto itr = procargs.begin() + sizeof(argc);
+    const auto end = procargs.begin() + size;
+
+    // Skip exec_path (null-terminated)
+    auto e = std::find(itr, end, '\0');
+    if (e == end)
+    {
+        BOOST_PROCESS_V2_ASSIGN_EC(ec, EINVAL, system_category());
+        return {};
+    }
+    itr = e + 1;
+
+    // Skip padding null bytes between exec_path and argv[0]
+    while (itr != end && *itr == '\0')
+        ++itr;
 
     std::unique_ptr<char*[]> argv{new char*[argc + 1]};
-    const auto end = procargs.end();
 
     argv[argc] = nullptr; //args is a null-terminated list
 
-    for (auto n = 0u; n <= argc; n++)
+    for (auto n = 0; n < argc; n++)
     {
-        auto e = std::find(itr, end, '\0');
-        if (e == end && n < argc) // something off
+        if (itr >= end)
         {
             BOOST_PROCESS_V2_ASSIGN_EC(ec, EINVAL, system_category());
             return {};
         }
         argv[n] = &*itr;
-        itr = e + 1; // start searching start
+        e = std::find(itr, end, '\0');
+        if (e == end && n < argc - 1) // something off
+        {
+            BOOST_PROCESS_V2_ASSIGN_EC(ec, EINVAL, system_category());
+            return {};
+        }
+        itr = e + 1; // start searching after null
     }
 
-    auto fr_func = +[](int argc, char ** argv) {delete [] argv;};
+    auto fr_func = +[](int /*argc*/, char ** argv) {delete [] argv;};
 
     return make_cmd_shell_::make(std::move(procargs), argc, argv.release(), fr_func);
 }

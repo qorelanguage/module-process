@@ -1,7 +1,7 @@
 /*
     Qore Programming Language process Module
 
-    Copyright (C) 2003 - 2025 Qore Technologies, s.r.o.
+    Copyright (C) 2003 - 2026 Qore Technologies, s.r.o.
 
     Permission is hereby granted, free of charge, to any person obtaining a
     copy of this software and associated documentation files (the "Software"),
@@ -55,6 +55,9 @@ The %process module provides an API to manage system processes. It can be used t
     - File descriptor counting via \c /proc/PID/fd
     - Signal sending via kill()
     - All executor callbacks
+    - @ref Qore::Process::Process::getCommandLine() "Process::getCommandLine()" via \c /proc/PID/cmdline
+    - @ref Qore::Process::Process::getPidsForPort() "Process::getPidsForPort()" via \c /proc/net/tcp + \c /proc/PID/fd
+    - @ref Qore::Process::Process::getPidsForUnixSocket() "Process::getPidsForUnixSocket()" via \c /proc/net/unix + \c /proc/PID/fd
 
     @subsection process_platforms_macos macOS / Darwin
     Full support with some limitations:
@@ -65,6 +68,24 @@ The %process module provides an API to manage system processes. It can be used t
         the \c "com.apple.system-task-ports" entitlement
     - File descriptor counting: fully supported via \c libproc
     - Signal sending: fully supported
+    - @ref Qore::Process::Process::getCommandLine() "Process::getCommandLine()" via \c KERN_PROCARGS sysctl (returns full command line with arguments)
+    - @ref Qore::Process::Process::getPidsForPort() "Process::getPidsForPort()" via native \c libproc APIs (only LISTEN-state TCP sockets)
+    - @ref Qore::Process::Process::getPidsForUnixSocket() "Process::getPidsForUnixSocket()" via native \c libproc APIs
+    - @note May require elevated privileges to see other users' processes
+
+    @subsection process_platforms_bsd FreeBSD / DragonFly BSD
+    Good support:
+    - Process creation and management: fully supported
+    - @ref Qore::Process::Process::getCommandLine() "Process::getCommandLine()" via kvm library
+    - @ref Qore::Process::Process::getPidsForPort() "Process::getPidsForPort()" via \c sysctl \c KERN_PROC_FILEDESC
+    - @ref Qore::Process::Process::getPidsForUnixSocket() "Process::getPidsForUnixSocket()" via \c sysctl \c KERN_PROC_FILEDESC
+
+    @subsection process_platforms_netbsd_openbsd NetBSD / OpenBSD
+    Partial support:
+    - Process creation and management: fully supported
+    - @ref Qore::Process::Process::getCommandLine() "Process::getCommandLine()" via kvm library
+    - @ref Qore::Process::Process::getPidsForPort() "Process::getPidsForPort()" NOT supported
+    - @ref Qore::Process::Process::getPidsForUnixSocket() "Process::getPidsForUnixSocket()" NOT supported
 
     @subsection process_platforms_solaris Solaris
     Partial support:
@@ -91,6 +112,14 @@ Version 1.0. (See http://www.boost.org/LICENSE_1_0.txt)
     @subsection process_v2_1 process v2.1
 
     <b>New Features:</b>
+    - added @ref Qore::Process::Process::getCommandLine() "Process::getCommandLine()" to get the full command
+      line of a process by PID using Boost ext::cmd; supported on Linux, macOS, FreeBSD, DragonFly, NetBSD,
+      and OpenBSD
+    - added @ref Qore::Process::Process::getPidsForPort() "Process::getPidsForPort()" to find PIDs listening
+      on a TCP port; uses \c /proc/net/tcp on Linux, native \c libproc APIs on macOS, and \c sysctl
+      \c KERN_PROC_FILEDESC on FreeBSD and DragonFly BSD; only matches TCP sockets in LISTEN state
+    - added @ref Qore::Process::Process::getPidsForUnixSocket() "Process::getPidsForUnixSocket()" to find PIDs
+      using a Unix domain socket; supported on Linux, macOS, FreeBSD, and DragonFly BSD
     - added @ref Qore::Process::Process::closeStdin() "Process::closeStdin()" to signal EOF to child processes
     - added @ref Qore::Process::Process::sendSignal() "Process::sendSignal()" for graceful termination via specific signals
     - added @ref Qore::Process::Process::run() "Process::run()" convenience method to run a command and capture output
