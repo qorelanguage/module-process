@@ -430,7 +430,7 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
     }
 
     // check for interrupt before spawning process
-    if (qore_check_io_interrupt(xsink, "Process::constructor")) {
+    if (qore_check_cancel(xsink, "Process::constructor")) {
         return;
     }
 
@@ -1187,7 +1187,7 @@ bool ProcessPriv::wait(ExceptionSink* xsink) {
 
     try {
         // check for interrupt before blocking wait
-        if (qore_check_io_interrupt(xsink, "Process::wait")) {
+        if (qore_check_cancel(xsink, "Process::wait")) {
             return false;
         }
 
@@ -2150,7 +2150,7 @@ void ProcessPriv::waitForTermination(int pid, ExceptionSink* xsink) {
     }
     while (true) {
         // check for interrupt during poll wait
-        if (qore_check_io_interrupt(xsink, "Process::waitForTermination")) {
+        if (qore_check_cancel(xsink, "Process::waitForTermination")) {
             return;
         }
         if (kill(pid, 0)) {
