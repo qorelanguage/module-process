@@ -298,7 +298,8 @@ ProcessPriv::ProcessPriv(const char* command, const QoreListNode* arguments, con
                 "type '%s' instead", n.getTypeName());
             return;
         }
-        enc = QEM.findCreate(n.get<const QoreStringNode>()->c_str());
+        QoreStringValueHelper str(n);
+        enc = QEM.findCreate(str->c_str());
     }
 
     // Handle shell option - wrap command in sh -c
