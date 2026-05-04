@@ -138,6 +138,13 @@ Version 1.0. (See http://www.boost.org/LICENSE_1_0.txt)
     - <b>CRITICAL:</b> fixed potential kill(-1, SIGKILL) bug that could kill all user processes when
       terminate() or sendSignal() was called on an invalid/moved-from process object
       (boost::process v1 returns -1 for invalid PIDs, and kill(-1, sig) kills all processes)
+    - fixed a deadlock in @ref Qore::Process::Process::wait() "Process::wait()" and the destructor
+      when the child process forked grandchildren that inherited the stdout/stderr pipes
+      (e.g. <tt>cmd & wait</tt>): pending async reads now complete promptly when the immediate
+      child exits, rather than blocking until all grandchildren also close the pipe write ends
+    - fixed a memory leak in @ref Qore::Process::Process::searchPath() "Process::searchPath()" when
+      the command was not found: the pre-allocated result string was leaked when the underlying
+      lookup raised an exception
     - added PID validation in sendSignal() and terminate() to reject PIDs <= 0
     - added safety check in getChildPids() to reject PID 1 (init) and invalid PIDs
     - child processes now run in their own process group (setpgid) to isolate signals

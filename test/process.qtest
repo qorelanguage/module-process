@@ -908,8 +908,8 @@ public class Main inherits QUnit::Test {
         assertThrows("OBJECT-ALREADY-DELETED", "stdout.*File", sub () { Process p("test", {"stdout": f0}); });
         assertThrows("OBJECT-ALREADY-DELETED", "stderr.*File", sub () { Process p("test", {"stderr": f0}); });
 
-        assertThrows("PROCESS-OPTION-ERROR", "stdout.*File", sub () { Process p("test", {"stdout": f1}); });
-        assertThrows("PROCESS-OPTION-ERROR", "stderr.*File", sub () { Process p("test", {"stderr": f1}); });
+        assertThrows("PROCESS-OPTION-ERROR", "stdout.*File", sub () { Process p("test", {"stdout": NOTHING}); });
+        assertThrows("PROCESS-OPTION-ERROR", "stderr.*File", sub () { Process p("test", {"stderr": NOTHING}); });
     }
 
     outputRedirectReadTest() {
@@ -1292,16 +1292,22 @@ public class Main inherits QUnit::Test {
     childPidsTest() {
         # Test getChildPids() for process with children
         {
-            # Launch bash with background children
-            Process p("bash", ("-c", "sleep 10 & sleep 10 & wait"), {"shell": False});
-            sleep(500ms);  # Give time for children to start
+            # Launch bash with two background sleep children. Echo a marker after the
+            # children have been forked so we can synchronize deterministically rather
+            # than polling.
+            Process p("bash", ("-c", "sleep 30 & sleep 30 & echo READY; wait"), {"shell": False});
+            on_exit {
+                try { p.terminate(); } catch (hash<ExceptionInfo> ex) {}
+            }
+
+            # Block until the marker appears; this guarantees both children are spawned.
+            *string out = p.readStdout(6, 5000ms);
+            assertRegex("READY", out ?? "", "bash should signal that children have spawned");
 
             if (Qore::PlatformOS == "Linux" || Qore::PlatformOS == "Darwin") {
                 list<int> children = p.getChildPids();
-                assertGe(children.size(), 0, "should have at least 0 children (timing dependent)");
+                assertGe(2, children.size(), "process should have at least 2 sleep children");
             }
-
-            p.terminate();
         }
 
         # Test static getChildPids()
@@ -1374,8 +1380,10 @@ public class Main inherits QUnit::Test {
     terminateTreeTest() {
         # Test terminateTree() kills parent and children
         {
-            Process p("bash", ("-c", "sleep 100 & sleep 100 & wait"));
-            sleep(200ms);  # Give time for children to start
+            # Echo a marker after the children fork so we can synchronize without polling.
+            Process p("bash", ("-c", "sleep 100 & sleep 100 & echo READY; wait"));
+            *string out = p.readStdout(6, 5000ms);
+            assertRegex("READY", out ?? "", "bash should signal that children have spawned");
 
             int pid = p.id();
             assertTrue(p.running(), "process should be running");

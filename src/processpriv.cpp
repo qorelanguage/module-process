@@ -1006,6 +1006,16 @@ void ProcessPriv::setExitCode(boost::system::error_code ec, int e) {
         // so we should NOT call evaluate_exit_code() again here
         exit_code = e;
     }
+    // Cancel pending stdout/stderr reads now that the child has exited. If the child
+    // forked grandchildren that inherited the stdio pipes (e.g. "cmd & wait"), those
+    // grandchildren keep the write ends open and our async_read would never see EOF,
+    // leaving finalizeStreams() blocked in m_asio_ctx_run_future.get() until they
+    // eventually exit. Already-delivered data in m_out_buf / m_err_buf is preserved.
+    {
+        boost::system::error_code cancel_ec;
+        m_out_pipe.cancel(cancel_ec);
+        m_err_pipe.cancel(cancel_ec);
+    }
     if (process_status_waiting) {
         cond_process_status.notify_all();
     }

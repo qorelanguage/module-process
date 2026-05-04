@@ -863,7 +863,11 @@ int Process::getDescriptorCount() {
     @throw PROCESS-SEARCH-PATH-ERROR in case the \c command is not found in given PATH
  */
 static *string Process::searchPath(string command) {
-    return new QoreStringNode(ProcessPriv::optsPath(command->c_str(), 0, xsink).string());
+    boost::filesystem::path p = ProcessPriv::optsPath(command->c_str(), 0, xsink);
+    if (*xsink) {
+        return QoreValue();
+    }
+    return new QoreStringNode(p.string());
 }
 
 //! Search for full path of command in current process's PATH
@@ -876,7 +880,11 @@ static *string Process::searchPath(string command) {
     @throw PROCESS-SEARCH-PATH-ERROR in case the \c command is not found in given PATH
  */
 static *string Process::searchPath(string command, hash<auto> opts) {
-    return new QoreStringNode(ProcessPriv::optsPath(command->c_str(), opts, xsink).string());
+    boost::filesystem::path p = ProcessPriv::optsPath(command->c_str(), opts, xsink);
+    if (*xsink) {
+        return QoreValue();
+    }
+    return new QoreStringNode(p.string());
 }
 
 //! Returns process information for the current process
