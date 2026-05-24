@@ -326,11 +326,11 @@ qclass Process [dom=EXTERNAL_PROCESS; arg=ProcessPriv* priv; ns=Qore::Process];
 
 //! Construct the child from a PID.
 /**
-    @param id the PID of the process.
+    @param pid the PID of the process.
 
     @note The only functionality available when this constructor is used is id(); all other calls will fail
  */
-Process::constructor(int pid) {
+Process::constructor(int pid) [flags=NAMED_ARGS] {
     try {
         self->setPrivate(CID_PROCESS, new ProcessPriv(pid, xsink));
     } catch (const std::exception& ex) {
@@ -348,7 +348,7 @@ Process::constructor(int pid) {
     @note this constructor is serialized to work around race conditions in multi-threaded contexts in
     \c boost::process
  */
-Process::constructor(string command) {
+Process::constructor(string command) [flags=NAMED_ARGS] {
     AutoLocker al(constructor_serializer);
     try {
         self->setPrivate(CID_PROCESS, new ProcessPriv(command->c_str(), 0, 0, xsink));
@@ -360,7 +360,7 @@ Process::constructor(string command) {
 //! Construct a child process from the given arguments and launch it.
 /**
     @param command a string with program to be run; can be either an absolute path or a simple command to be found in the search path
-    @param opts a hash with additional options for the child process @ref process_options
+    @param options a hash with additional options for the child process @ref process_options
 
     @throw PROCESS-CONSTRUCTOR-ERROR in case of error. Exception \c desc contains the additional information
     @throw PROCESS-OPTION-ERROR in case invalid option is passed
@@ -369,10 +369,10 @@ Process::constructor(string command) {
     @note this constructor is serialized to work around race conditions in multi-threaded contexts in
     \c boost::process
  */
-Process::constructor(string command, hash<auto> opts) {
+Process::constructor(string command, hash<auto> options) {
     AutoLocker al(constructor_serializer);
     try {
-        self->setPrivate(CID_PROCESS, new ProcessPriv(command->c_str(), 0, opts, xsink));
+        self->setPrivate(CID_PROCESS, new ProcessPriv(command->c_str(), 0, options, xsink));
     } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-CONSTRUCTOR-ERROR", ex.what());
     }
@@ -403,7 +403,7 @@ Process::constructor(string command, softlist<softstring> arguments) {
     @param command a string with program to be run; can be either an absolute path or a simple command to be found in
     the search path
     @param arguments a list with additiona \c command arguments
-    @param opts a hash with additional options for the child process. See @ref process_options
+    @param options a hash with additional options for the child process. See @ref process_options
 
     @throw PROCESS-CONSTRUCTOR-ERROR in case of error. Exception \c desc contains the additional information
     @throw PROCESS-OPTION-ERROR in case invalid option is passed
@@ -412,10 +412,10 @@ Process::constructor(string command, softlist<softstring> arguments) {
     @note this constructor is serialized to work around race conditions in multi-threaded contexts in
     \c boost::process
 */
-Process::constructor(string command, softlist<softstring> arguments, hash<auto> opts) {
+Process::constructor(string command, softlist<softstring> arguments, hash<auto> options) [flags=NAMED_ARGS] {
     AutoLocker al(constructor_serializer);
     try {
-        self->setPrivate(CID_PROCESS, new ProcessPriv(command->c_str(), arguments, opts, xsink));
+        self->setPrivate(CID_PROCESS, new ProcessPriv(command->c_str(), arguments, options, xsink));
     } catch (const std::exception& ex) {
         xsink->raiseException("PROCESS-CONSTRUCTOR-ERROR", ex.what());
     }
@@ -518,7 +518,7 @@ while (!p.wait(1)) {
 printf("Sleep finished with code: %d\n", p.exitCode());
     @endcode
 
-    @param timeout_ms a timeout to wait
+    @param timeout a timeout to wait
 
     @return \c True if child exited while waiting, \c False in case of timeout
 
@@ -527,8 +527,8 @@ printf("Sleep finished with code: %d\n", p.exitCode());
     @note Any exceptions thrown in the background I/O thread (if a stream was used) are rethrown here
     if the process terminates in the timeout period
  */
-bool Process::wait(timeout timeout_ms) {
-    return priv->wait(timeout_ms, xsink);
+bool Process::wait(timeout timeout) [flags=NAMED_ARGS] {
+    return priv->wait(timeout, xsink);
 }
 
 //! Detach the child, i.e. let it run after this handle dies.
@@ -565,7 +565,7 @@ if (!p.wait(5s)) {
 }
     @endcode
 
-    @param sig the signal number to send (e.g., SIGTERM, SIGINT, SIGHUP)
+    @param signal the signal number to send (e.g., SIGTERM, SIGINT, SIGHUP)
 
     @return @ref Qore::True "True" if the signal was sent successfully
 
@@ -575,55 +575,55 @@ if (!p.wait(5s)) {
 
     @note This method is only available on POSIX systems
  */
-bool Process::sendSignal(int sig) {
-    return priv->sendSignal(sig, xsink);
+bool Process::sendSignal(int signal) [flags=NAMED_ARGS] {
+    return priv->sendSignal(signal, xsink);
 }
 
 //! Write into child's \c stdin
-/** @param s a string data to be written
+/** @param data string data to be written
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
-nothing Process::write(string s) {
+nothing Process::write(string data) [flags=NAMED_ARGS] {
+    priv->write(data->c_str(), data->size(), xsink);
+}
+
+//! Write into child's \c stdin
+/** @param data binary data to be written
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+ */
+nothing Process::write(binary data) [flags=NAMED_ARGS] {
+    priv->write(static_cast<const char*>(data->getPtr()), data->size(), xsink);
+}
+
+//! Write into child's \c stdin
+/** @param data an integer to be written
+
+    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
+ */
+nothing Process::write(int data) [flags=NAMED_ARGS] {
+    QoreStringNodeValueHelper s(data);
     priv->write(s->c_str(), s->size(), xsink);
 }
 
 //! Write into child's \c stdin
-/** @param b a binary data to be written
+/** @param data a float to be written
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
-nothing Process::write(binary b) {
-    priv->write(static_cast<const char*>(b->getPtr()), b->size(), xsink);
-}
-
-//! Write into child's \c stdin
-/** @param i an integer to be writen
-
-    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
- */
-nothing Process::write(int i) {
-    QoreStringNodeValueHelper s(i);
+nothing Process::write(float data) [flags=NAMED_ARGS] {
+    QoreStringNodeValueHelper s(data);
     priv->write(s->c_str(), s->size(), xsink);
 }
 
 //! Write into child's \c stdin
-/** @param f a float to be writen
+/** @param data a number to be written
 
     @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
  */
-nothing Process::write(float f) {
-    QoreStringNodeValueHelper s(f);
-    priv->write(s->c_str(), s->size(), xsink);
-}
-
-//! Write into child's \c stdin
-/** @param n a number to be writen
-
-    @throw PROCESS-CHECK-ERROR in case child handle was not properly initialized
- */
-nothing Process::write(number n) {
-    QoreStringNodeValueHelper s(n);
+nothing Process::write(number data) [flags=NAMED_ARGS] {
+    QoreStringNodeValueHelper s(data);
     priv->write(s->c_str(), s->size(), xsink);
 }
 
@@ -683,7 +683,7 @@ nothing Process::closeStdin() {
       stdout or stderr, this can result in output being buffered and not returned.  In such cases use a
       single-character encoding (like \c ASCII) or use the binary read methods instead.
  */
-*string Process::readStdout(int bytes, timeout timeout = 0) {
+*string Process::readStdout(int bytes, timeout timeout = 0) [flags=NAMED_ARGS] {
     if (bytes < 0)
         return QoreValue();
 
@@ -726,7 +726,7 @@ nothing Process::closeStdin() {
       stdout or stderr, this can result in output being buffered and not returned.  In such cases use a
       single-character encoding (like \c ASCII) or use the binary read methods instead.
  */
-*string Process::readStderr(int bytes, timeout timeout = 0) {
+*string Process::readStderr(int bytes, timeout timeout = 0) [flags=NAMED_ARGS] {
     if (bytes < 0)
         return QoreValue();
 
@@ -762,7 +762,7 @@ nothing Process::closeStdin() {
     @note This method will throw a \c PROCESS-STREAM-ERROR if an \c OutputStream argument was used in the \a stdout
     option in the constructor()
  */
-*binary Process::readStdoutBinary(int bytes, timeout timeout = 0) {
+*binary Process::readStdoutBinary(int bytes, timeout timeout = 0) [flags=NAMED_ARGS] {
     if (bytes < 0)
         return QoreValue();
 
@@ -799,7 +799,7 @@ nothing Process::closeStdin() {
     @note This method will throw a \c PROCESS-STREAM-ERROR if an \c OutputStream argument was used in the \a stdout
     option in the constructor()
  */
-*binary Process::readStderrBinary(int bytes, timeout timeout = 0) {
+*binary Process::readStderrBinary(int bytes, timeout timeout = 0) [flags=NAMED_ARGS] {
     if (bytes < 0)
         return QoreValue();
 
@@ -862,7 +862,7 @@ int Process::getDescriptorCount() {
 
     @throw PROCESS-SEARCH-PATH-ERROR in case the \c command is not found in given PATH
  */
-static *string Process::searchPath(string command) {
+static *string Process::searchPath(string command) [flags=NAMED_ARGS] {
     boost::filesystem::path p = ProcessPriv::optsPath(command->c_str(), 0, xsink);
     if (*xsink) {
         return QoreValue();
@@ -873,14 +873,14 @@ static *string Process::searchPath(string command) {
 //! Search for full path of command in current process's PATH
 /**
     @param command command name
-    @param opts a hash with process options. @ref process_options - \c path is important here
+    @param options a hash with process options. @ref process_options - \c path is important here
 
     @return string with full path of the \c command
 
     @throw PROCESS-SEARCH-PATH-ERROR in case the \c command is not found in given PATH
  */
-static *string Process::searchPath(string command, hash<auto> opts) {
-    boost::filesystem::path p = ProcessPriv::optsPath(command->c_str(), opts, xsink);
+static *string Process::searchPath(string command, hash<auto> options) [flags=NAMED_ARGS] {
+    boost::filesystem::path p = ProcessPriv::optsPath(command->c_str(), options, xsink);
     if (*xsink) {
         return QoreValue();
     }
@@ -927,7 +927,7 @@ static hash<MemorySummaryInfo> Process::getMemorySummaryInfo() {
 
     @see HAVE_PROCESS_GETMEMORYINFO
 */
-static hash<MemorySummaryInfo> Process::getMemorySummaryInfo(int pid) {
+static hash<MemorySummaryInfo> Process::getMemorySummaryInfo(int pid) [flags=NAMED_ARGS] {
     return ProcessPriv::getMemorySummaryInfo(pid, xsink);
 }
 
@@ -947,7 +947,7 @@ static hash<MemorySummaryInfo> Process::getMemorySummaryInfo(int pid) {
     - @ref HAVE_PROCESS_CHECKPID
     - @ref Process::running()
 */
-static bool Process::checkPid(int pid) {
+static bool Process::checkPid(int pid) [flags=NAMED_ARGS] {
     return ProcessPriv::checkPid(pid, xsink);
 }
 
@@ -967,7 +967,7 @@ static bool Process::checkPid(int pid) {
     - @ref HAVE_PROCESS_TERMINATE
     - @ref Process::terminate()
 */
-static nothing Process::terminate(int pid) {
+static nothing Process::terminate(int pid) [flags=NAMED_ARGS] {
     ProcessPriv::terminate(pid, xsink);
 }
 
@@ -982,7 +982,7 @@ static nothing Process::terminate(int pid) {
     - @ref HAVE_PROCESS_WAITFORTERMINATION
     - @ref Process::terminate()
 */
-static nothing Process::waitForTermination(int pid) {
+static nothing Process::waitForTermination(int pid) [flags=NAMED_ARGS] {
     ProcessPriv::waitForTermination(pid, xsink);
 }
 
@@ -1026,7 +1026,7 @@ static list<float> Process::getLoadAvg() [flags=RET_VALUE_ONLY] {
     @see
     - @ref HAVE_PROCESS_GETDESCRIPTORCOUNT
 */
-static int Process::getDescriptorCount(int pid) [flags=RET_VALUE_ONLY] {
+static int Process::getDescriptorCount(int pid) [flags=RET_VALUE_ONLY,NAMED_ARGS] {
     return ProcessPriv::getDescriptorCount(xsink, pid);
 }
 
@@ -1067,7 +1067,7 @@ if (!result.ok) {
 
     @param command the command to run
     @param arguments optional list of arguments to pass to the command
-    @param opts optional hash of process options (see @ref process_options); note that stdout and stderr
+    @param options optional hash of process options (see @ref process_options); note that stdout and stderr
         stream options are not supported with this method
     @param timeout optional timeout in milliseconds; if 0 or not provided, waits indefinitely
 
@@ -1078,8 +1078,9 @@ if (!result.ok) {
 
     @note If the process times out, it will be terminated and the \c ok field will be @ref Qore::False "False"
 */
-static hash<ProcessResult> Process::run(string command, *softlist<softstring> arguments, *hash<auto> opts, timeout timeout = 0) {
-    return ProcessPriv::run(command->c_str(), arguments, opts, timeout, xsink);
+static hash<ProcessResult> Process::run(string command, *softlist<softstring> arguments, *hash<auto> options,
+        timeout timeout = 0) [flags=NAMED_ARGS] {
+    return ProcessPriv::run(command->c_str(), arguments, options, timeout, xsink);
 }
 
 //! Check if a command exists in the system PATH
@@ -1096,7 +1097,7 @@ if (Process::commandExists("docker")) {
 
     @return @ref Qore::True "True" if the command exists in PATH, @ref Qore::False "False" otherwise
 */
-static bool Process::commandExists(string command) {
+static bool Process::commandExists(string command) [flags=NAMED_ARGS] {
     try {
         ProcessPriv::optsPath(command->c_str(), nullptr, xsink);
         if (*xsink) {
@@ -1164,7 +1165,7 @@ printf("CPU time: user=%.2f sys=%.2f\n", usage.user_time, usage.system_time);
 
     @note On Linux, this reads from /proc/PID/stat.  Not all fields are available.
 */
-static hash<ResourceUsageInfo> Process::getResourceUsage(int pid) {
+static hash<ResourceUsageInfo> Process::getResourceUsage(int pid) [flags=NAMED_ARGS] {
     return ProcessPriv::getResourceUsage(pid, xsink);
 }
 
@@ -1202,7 +1203,7 @@ printf("My child processes: %y\n", children);
     @throw PROCESS-GETCHILDPIDS-ERROR in case of error getting child PIDs
     @throw PROCESS-GETCHILDPIDS-UNSUPPORTED-ERROR if getting child PIDs is not supported on this platform
 */
-static list<int> Process::getChildPids(int pid) {
+static list<int> Process::getChildPids(int pid) [flags=NAMED_ARGS] {
     return ProcessPriv::getChildPids(pid, xsink);
 }
 
@@ -1258,7 +1259,7 @@ printf("Output: %s\n", result.stdout);
     - The exit code in the result is from the last process in the pipeline
     - If any process fails, the ok field will be False
 */
-static hash<ProcessResult> Process::pipeline(softlist<softlist<softstring>> commands) {
+static hash<ProcessResult> Process::pipeline(softlist<softlist<softstring>> commands) [flags=NAMED_ARGS] {
     if (!commands || !commands->size()) {
         xsink->raiseException("PROCESS-PIPELINE-ERROR", "pipeline requires at least one command");
         return QoreValue();
@@ -1276,6 +1277,9 @@ static hash<ProcessResult> Process::pipeline(softlist<softlist<softstring>> comm
         QoreStringValueHelper cmdStr(cmd->retrieveEntry(0));
         ReferenceHolder<QoreListNode> args(new QoreListNode(stringTypeInfo), xsink);
         for (size_t i = 1; i < cmd->size(); i++) {
+            if (!(i % 100) && qore_check_cancel(xsink, "Process::pipeline")) {
+                return QoreValue();
+            }
             QoreStringValueHelper argStr(cmd->retrieveEntry(i));
             args->push(new QoreStringNode(argStr->c_str()), xsink);
         }
@@ -1288,7 +1292,12 @@ static hash<ProcessResult> Process::pipeline(softlist<softlist<softstring>> comm
     bool first = true;
 
     ConstListIterator cmdIter(commands);
+    size_t cmd_i = 0;
     while (cmdIter.next()) {
+        if (!(++cmd_i % 100) && qore_check_cancel(xsink, "Process::pipeline")) {
+            shellCmd->deref();
+            return QoreValue();
+        }
         QoreValue cmdVal = cmdIter.getValue();
         if (cmdVal.getType() != NT_LIST) {
             shellCmd->deref();
@@ -1311,6 +1320,10 @@ static hash<ProcessResult> Process::pipeline(softlist<softlist<softstring>> comm
 
         // Add command and arguments (with proper quoting)
         for (size_t i = 0; i < cmd->size(); i++) {
+            if (i && !(i % 100) && qore_check_cancel(xsink, "Process::pipeline")) {
+                shellCmd->deref();
+                return QoreValue();
+            }
             if (i > 0) shellCmd->concat(' ');
 
             QoreStringValueHelper argStr(cmd->retrieveEntry(i));
@@ -1318,7 +1331,12 @@ static hash<ProcessResult> Process::pipeline(softlist<softlist<softstring>> comm
 
             // Check if quoting is needed
             bool needsQuote = false;
+            size_t char_i = 0;
             for (const char* p = arg; *p; p++) {
+                if (!(++char_i % 100) && qore_check_cancel(xsink, "Process::pipeline")) {
+                    shellCmd->deref();
+                    return QoreValue();
+                }
                 if (*p == ' ' || *p == '\t' || *p == '"' || *p == '\'' ||
                     *p == '|' || *p == '&' || *p == ';' || *p == '<' || *p == '>' ||
                     *p == '(' || *p == ')' || *p == '$' || *p == '`' || *p == '\\' ||
@@ -1331,7 +1349,12 @@ static hash<ProcessResult> Process::pipeline(softlist<softlist<softstring>> comm
             if (needsQuote) {
                 // Use single quotes, escaping any single quotes in the string
                 shellCmd->concat('\'');
+                char_i = 0;
                 for (const char* p = arg; *p; p++) {
+                    if (!(++char_i % 100) && qore_check_cancel(xsink, "Process::pipeline")) {
+                        shellCmd->deref();
+                        return QoreValue();
+                    }
                     if (*p == '\'') {
                         shellCmd->concat("'\\''");
                     } else {
@@ -1380,7 +1403,7 @@ printf("Current process: %s\n", cmdline);
 
     @since process 2.1
 */
-static string Process::getCommandLine(int pid) [flags=RET_VALUE_ONLY] {
+static string Process::getCommandLine(int pid) [flags=RET_VALUE_ONLY,NAMED_ARGS] {
     return ProcessPriv::getCommandLine(pid, xsink);
 }
 
@@ -1412,7 +1435,7 @@ if (pids) {
 
     @since process 2.1
 */
-static list<int> Process::getPidsForPort(int port) [flags=RET_VALUE_ONLY] {
+static list<int> Process::getPidsForPort(int port) [flags=RET_VALUE_ONLY,NAMED_ARGS] {
     return ProcessPriv::getPidsForPort(port, xsink);
 }
 
@@ -1443,6 +1466,6 @@ if (pids) {
 
     @since process 2.1
 */
-static list<int> Process::getPidsForUnixSocket(string path) [flags=RET_VALUE_ONLY] {
+static list<int> Process::getPidsForUnixSocket(string path) [flags=RET_VALUE_ONLY,NAMED_ARGS] {
     return ProcessPriv::getPidsForUnixSocket(path->c_str(), xsink);
 }

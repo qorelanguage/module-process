@@ -80,6 +80,7 @@ public class Main inherits QUnit::Test {
         addTestCase("Absolute test", \absoluteTest());
         addTestCase("loadavg test", \loadAvgTest());
         addTestCase("Constructor test", \constructorTest());
+        addTestCase("Named argument calls", \namedArgumentTest());
         addTestCase("Simple test", \simpleTest());
         addTestCase("Single test negative", \simpleTestNegative());
         addTestCase("IO test", \ioTest());
@@ -284,6 +285,52 @@ public class Main inherits QUnit::Test {
         Process p3(exe, opts);
         p3.wait();
         assertEq(0, p3.exitCode(), "exit code p3");
+    }
+
+    namedArgumentTest() {
+        hash<auto> options = {"path": (m_prefix,)};
+        string output_command = getTestValue("testOutput");
+        string true_command = getTestValue("testTrue");
+
+        Process current(pid: getpid());
+        assertEq(getpid(), current.id(), "named pid constructor");
+
+        Process p(command: output_command, arguments: (), options: options);
+        assertTrue(p.wait(timeout: 5s), "named wait");
+        assertEq("stdout", p.readStdout(bytes: 100, timeout: 1s), "named readStdout");
+        assertEq("stderr", p.readStderr(bytes: 100, timeout: 1s), "named readStderr");
+
+        Process bin(command: output_command, arguments: (), options: options);
+        assertTrue(bin.wait(timeout: 5s), "named binary wait");
+        assertEq(<7374646f7574>, bin.readStdoutBinary(bytes: 100, timeout: 1s), "named readStdoutBinary");
+        assertEq(<737464657272>, bin.readStderrBinary(bytes: 100, timeout: 1s), "named readStderrBinary");
+
+        hash<auto> result = Process::run(command: output_command, arguments: NOTHING,
+            options: options, timeout: 5s);
+        assertEq(True, result.ok, "named Process::run ok");
+        assertEq("stdout", result.stdout, "named Process::run stdout");
+        assertEq("stderr", result.stderr, "named Process::run stderr");
+
+        assertTrue(Process::commandExists(command: "ls"), "named commandExists");
+        assertEq(m_prefix + true_command, Process::searchPath(command: true_command, options: options),
+            "named searchPath");
+        assertTrue(Process::checkPid(pid: getpid()), "named checkPid");
+        assertGt(0, Process::getDescriptorCount(pid: getpid()), "named descriptor count");
+        assertGt(0, Process::getCommandLine(pid: getpid()).size(), "named command line");
+
+        hash<auto> pipe_result = Process::pipeline(commands: (("echo", "named-process"),));
+        assertEq(True, pipe_result.ok, "named pipeline ok");
+        assertEq("named-process\n", pipe_result.stdout, "named pipeline stdout");
+    }
+
+    private namedArgumentCompileOnly() {
+        Process::terminate(pid: 1);
+        Process::waitForTermination(pid: 1);
+        hash<MemorySummaryInfo> memory_summary = Process::getMemorySummaryInfo(pid: getpid());
+        hash<ResourceUsageInfo> resource_usage = Process::getResourceUsage(pid: getpid());
+        list<int> child_pids = Process::getChildPids(pid: getpid());
+        list<int> port_pids = Process::getPidsForPort(port: 80);
+        list<int> socket_pids = Process::getPidsForUnixSocket(path: "/tmp/test.sock");
     }
 
     simpleTest() {
