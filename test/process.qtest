@@ -435,7 +435,7 @@ public class Main inherits QUnit::Test {
             }
             usleep(50ms);
         }
-        assertEq(str[0], b1);
+        assertEq(str.substr(0, 1), b1);
         assertEq(str[1..], p.readStdout(100));
     }
 
